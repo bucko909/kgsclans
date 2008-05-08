@@ -196,7 +196,7 @@ name_kgs => {
 id_member => {
 	defaults => {
 		brief => 'Member',
-		readonly => [ qw/clan member alias/ ],
+		readonly => [ qw/member alias/ ],
 	},
 	check => sub {
 		/^\d+$/
