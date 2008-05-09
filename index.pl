@@ -482,7 +482,6 @@ sub membertable {
 	} else {
 		if (!$clan || $clan =~ /[^0-9]/) {
 			if ($c->{clan_info}) {
-				print STDERR "Test. $c->{clan_info}\n";
 				$clause = "members.clan_id = ".$c->{clan_info}{id};
 			} elsif ($clan) {
 				return "\"$clan\" is not a valid clan ID.";
