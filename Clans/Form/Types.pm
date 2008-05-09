@@ -273,7 +273,7 @@ rank_member => {
 id_brawlteam => {
 	defaults => {
 		brief => 'Brawl team',
-		readonly => [ qw/clan brawl/ ],
+		readonly => [ qw/brawl/ ],
 	},
 	check => sub {
 		/^\d+$/
@@ -384,7 +384,8 @@ id_clanperiod => {
 	},
 	default => sub {
 		my ($c) = @_;
-		return $c->getperiod();
+		my $period_info = $c->period_info;
+		return $period_info->{id};
 	}
 },
 url => {

@@ -138,11 +138,44 @@ add_clan => {
 		return (1, "Clan and forum added.");
 	}
 },
+new_page => {
+	# Edit page. Invoked only from custom forms.
+	brief => 'New page',
+	level => 'admin',
+	category => [ qw/page admin/ ], # TODO not finished types for params
+	params => [
+		period_id => {
+			type => 'id_clanperiod',
+		},
+		name => {
+			type => 'valid_new|name_page($period_id)',
+		},
+		based_on => {
+			type => 'name_page($period_id)',
+			brief => 'Template',
+		},
+		content => {
+			type => 'content_page($period_id,$based_on)',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		# Is it new? What revision?
+		$p->{time} = time();
+		$p->{forum_user_id} = $c->{phpbbsess}{userid};
+		if (!$c->db_do("INSERT INTO content SET name=?, content=?, revision=?, clanperiod=?, created=?, creator=?, current=?", {}, $p->{name}, $p->{content}, 1, $p->{period_id}, $p->{time}, $p->{forum_user_id}, 1)) {
+		my $name = $c->param('page');
+			return (0, "Database error.");
+		}
+		return (1, "Page created.");
+	}
+},
 edit_page => {
 	# Edit page. Invoked only from custom forms.
 	brief => 'Edit page',
 	level => 'admin',
-	category => [ qw/admin/ ], # TODO not finished types for params
+	category => [ qw/page admin/ ], # TODO not finished types for params
 	params => [
 		period_id => {
 			type => 'id_clanperiod',
@@ -379,7 +412,7 @@ add_private_clan_forum => {
 	action => sub {
 		my ($c, $p) = @_;
 
-		my $clan_info = $c->getclan($p->{clan_id});
+		my $clan_info = $c->clan_info($p->{clan_id});
 		$p->{forum_private_id} = $clan_info->{forum_private_id};
 
 		if ($p->{forum_private_id}) {

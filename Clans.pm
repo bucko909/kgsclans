@@ -18,7 +18,8 @@ sub new {
 	$this->{dbreqs} = 0;
 	$this->{cgi} = new CGI;
 	$this->get_dbi;
-	$this->getsession;
+	$this->read_session;
+	$this->read_common_params;
 	return $this;
 }
 
@@ -67,12 +68,15 @@ sub die_fatal_badinput {
 	$_[0]->die_fatal($_[1], "Your input was incomplete or invalid.");
 }
 
-sub rendermember {
-	shift;
+sub render_member {
+	my $this = shift;
 	if (ref $_[0]) {
 		@_ = ($_[0]{id}, $_[0]{name}, $_[0]{rank});
+	} elsif (!$_[1]) {
+		my $member = $this->member_info($_[0]);
+		@_ = ($member->{id}, $member->{name}, $member->{rank});
 	}
-	my $name = qq(<a href="index.pl?page=games&amp;memberid=$_[0]">$_[1]</a>);
+	my $name = qq(<a href="index.pl?page=games&amp;member=$_[0]">$_[1]</a>);
 	return $name unless $_[2];
 	if ($_[2] =~ /%/) {
 		my $r = $_[2];
@@ -82,12 +86,35 @@ sub rendermember {
 	return $_[2].' '.$name;
 }
 
-sub renderclan {
-	shift;
+sub render_clan {
+	my $this = shift;
 	if (ref $_[0]) {
 		@_ = ($_[0]{id}, $_[0]{name});
+	} elsif (!$_[1]) {
+		my $clan = $this->clan_info($_[0]);
+		@_ = ($clan->{id}, $clan->{name});
 	}
-	return qq(<a href="index.pl?page=clan&amp;clanid=$_[0]">$_[1]</a>);
+	return qq(<a href="index.pl?page=clan&amp;clan=$_[0]">$_[1]</a>);
+}
+
+sub render_team {
+	my $this = shift;
+	if (ref $_[0]) {
+		@_ = ($_[0]{id}, $_[0]{name});
+		my $clan_id = $this->db_selectone("SELECT clan_id FROM brawl_teams WHERE team_id = ?", {}, $_[0]);
+		if (!$clan_id) {
+			return "$_[1] (????)";
+		} else {
+			return "$_[1] (".$this->renderclan($clan_id).")";
+		}
+	} elsif (!$_[1]) {
+		my $info = $this->db_selectrow("SELECT clan_id, nane FROM brawl_teams WHERE team_id = ?", {}, $_[0]);
+		if (!$info) {
+			return "????";
+		} else {
+			return "$info->[1] (".$this->renderclan($info->[0]).")";
+		}
+	}
 }
 
 sub header {
@@ -101,11 +128,9 @@ sub header {
 	} else {
 		print $cgi->header;
 	}
-#	my $loginstat;
 	if ($this->{dbi}) {
 		$this->db_do("UPDATE hits SET hits=hits+1");
 		$this->{hits} = $this->db_selectone("SELECT hits FROM hits");
-#		$loginstat = $this->checklogin;
 	}
 	print $cgi->start_html(-title => "Clan Stats", -style => { -src => 'style.css' }, -onLoad=>'if(set_focus){set_focus.focus();}', -script => 'var set_focus;');
 	print $cgi->h1("Clan Stats");
@@ -117,16 +142,6 @@ sub header {
 	print $cgi->h2($_[1]) if $_[1];
 	$this->{cgi} = $cgi;
 	return $cgi;
-}
-
-sub action_fail {
-	print $_[0]{cgi}->h2("Failed");
-	print $_[0]{cgi}->p($_[1]);
-}
-
-sub action_success {
-	print $_[0]{cgi}->h2("Success");
-	print $_[0]{cgi}->p($_[1]);
 }
 
 sub footer {
@@ -168,80 +183,99 @@ sub lastid {
 	return $this->db_selectone("SELECT LAST_INSERT_ID();");
 }
 
-sub getperiod {
-	my $this = $_[0];
-	if ($this->{period}) {
-		return wantarray ? $this->{period_info} : $this->{period};
+sub period_info {
+	my ($this, $period_id) = @_;
+	$period_id = 'this' if !defined $period_id;
+	$this->{period_cache} ||= {};
+	return $this->{period_cache}{$period_id} if exists $this->{period_cache}{$period_id};
+	my $stuff;
+	if ($period_id eq 'this') {
+		$stuff = $this->db_selectrow("SELECT id, startdate, enddate FROM clanperiods ORDER BY id DESC LIMIT 1");
 	} else {
-		return wantarray ? @{$this->db_selectrow("SELECT id, startdate, enddate FROM clanperiods ORDER BY id DESC LIMIT 1")} : $this->db_selectone("SELECT id FROM clanperiods ORDER BY id DESC LIMIT 1");
+		$stuff = $this->db_selectrow("SELECT id, startdate, enddate FROM clanperiods WHERE id = ?", {}, $period_id);
 	}
-}
-
-sub setperiod {
-	my ($this, $periodid) = @_;
-	$periodid = $this->getperiod if !defined $periodid;
-	my $stuff = $this->db_selectrow("SELECT id, startdate, enddate FROM clanperiods WHERE id = ?", {}, $periodid);
 	if ($stuff) {
-		$this->{periodid} = $stuff->[0];
-		$this->{period} = $stuff;
+		my $period = {
+			id => $stuff->[0],
+			startdate => $stuff->[1],
+			enddate => $stuff->[2],
+		};
+		$this->{period_cache}{$period_id} = $period;
+		$this->{period_cache}{$period->{id}} = $period if $period_id eq 'this';
+		return $period;
 	}
+	$this->{period_cache}{$period_id} = undef;
+	return;
 }
 
-sub setclan_fromid { &setclan_from($_[0], 'id', $_[1]) }
-sub setclan_fromname { &setclan_from($_[0], 'name', $_[1]) }
-sub setclan_from {
-	my ($this, $from, $clanid) = @_;
+sub clan_info {
+	my ($this, $clan_id) = @_;
+	$this->{clan_cache} ||= {};
+	return $this->{clan_cache}{$clan_id} if exists $this->{clan_cache}{$clan_id};
 	my @rows = qw/id name tag regex leader_id userid tag url looking clanperiod email forum_id forum_group_id forum_leader_group_id forum_private_id/;
 	my $rows = join ',', @rows;
-	my $stuff = $this->db_selectrow("SELECT $rows FROM clans WHERE $from = ?", {}, $clanid);
-	if ($stuff) {
-		if ($this->{periodid} && $this->{periodid} != $stuff->[9]) {
-			$this->die_fatal_badinput("Both a clan and a period were specified, but the clan was not in the specified period");
-		} elsif (!$this->{periodid}) {
-			$this->setperiod($stuff->[9]);
-		}
-		$this->{clanid} = $stuff->[0];
-		$this->{clan} = {};
-		$this->{clan}{$rows[$_]} = $stuff->[$_] for(0..$#rows);
-		return $this->{clan};
-	}
-}
-
-sub getclan {
-	my ($this, $clanid, $from) = (@_, 'id');
-	my @rows = qw/id name tag regex leader_id userid tag url looking clanperiod email forum_id forum_group_id forum_leader_group_id forum_private_id/;
-	my $rows = join ',', @rows;
-	my $stuff = $this->db_selectrow("SELECT $rows FROM clans WHERE $from = ?", {}, $clanid);
+	my $stuff = $this->db_selectrow("SELECT $rows FROM clans WHERE id = ?", {}, $clan_id);
 	if ($stuff) {
 		my $clan = {};
 		$clan->{$rows[$_]} = $stuff->[$_] for(0..$#rows);
+		$this->{clan_cache}{$clan_id} = $clan;
 		return $clan;
 	}
+	$this->{clan_cache}{$clan_id} = undef;
+	return;
 }
 
-sub setmember_fromid { &setmember_from($_[0], 'id', $_[1]) }
-sub setmember_fromname_and_clanid { &setmember_from($_[0], 'name', $_[1], $_[2]) }
-sub setmember_from {
-	my ($this, $from, $memberid, $clanid) = @_;
-	my $extra = $clanid && $clanid !~ /[^0-9]/ ? "AND clan_id = $clanid" : "";
-	print STDERR "$extra\n";
+sub member_info {
+	my ($this, $member_id) = @_;
+	$this->{member_cache} ||= {};
+	return $this->{member_cache}{$member_id} if exists $this->{member_cache}{$member_id};
 	my @rows = qw/id name clan_id played won played_pure won_pure rank/;
 	my $rows = join ',', @rows;
-	my $stuff = $this->db_selectrow("SELECT $rows FROM members WHERE $from = ? $extra", {}, $memberid);
+	my $stuff = $this->db_selectrow("SELECT $rows FROM members WHERE id = ?", {}, $member_id);
 	if ($stuff) {
-		if ($this->{member} && $this->{member} != $stuff->[9]) {
-			$this->die_fatal_badinput("Both a clan and a member were specified, but the member was not in the specified clan");
-		} elsif (!$this->{member}) {
-			$this->setclan_fromid($stuff->[2]);
+		my $member = {};
+		$member->{$rows[$_]} = $stuff->[$_] for(0..$#rows);
+		$this->{member_cache}{$member_id} = $member;
+		return $member;
+	}
+	$this->{member_cache}{$member_id} = undef;
+	return;
+}
+
+sub read_common_params {
+	my ($this) = @_;
+	if (my $member_id = $this->param('member')) {
+		my $stuff = $this->member_info($member_id);
+		if (!$stuff) {
+			$this->die_fatal_badinput("Nonexistent member specified");
 		}
-		$this->{memberid} = $stuff->[0];
-		$this->{member} = {};
-		$this->{member}{$rows[$_]} = $stuff->[$_] for(0..$#rows);
-		return $this->{member};
+		$this->{context_params} = "member=$stuff->{id}";
+		$this->{member_info} = $stuff;
+		$this->{clan_info} = $this->clan_info($stuff->{clan_id});
+		$this->{period_info} = $this->period_info($this->{clan_info}{clanperiod});
+		$this->{period_cache}{this} = $this->{period_info};
+	} elsif (my $clan_id = $this->param('clan')) {
+		my $stuff = $this->clan_info($clan_id);
+		if (!$stuff) {
+			$this->die_fatal_badinput("Nonexistent clan specified");
+		}
+		$this->{context_params} = "clan=$stuff->{id}";
+		$this->{clan_info} = $stuff;
+		$this->{period_info} = $this->period_info($stuff->{clanperiod});
+		$this->{period_cache}{this} = $this->{period_info};
+	} else {
+		my $period_id = $this->param('period');
+		my $stuff = $this->period_info($period_id);
+		if (!$stuff) {
+			$this->die_fatal_badinput("Nonexistent period specified");
+		}
+		$this->{context_params} = $period_id ? "period=$stuff->{id}" : "";
+		$this->{period_info} = $stuff;
+		$this->{period_cache}{this} = $this->{period_info};
 	}
 }
 
-sub getsession {
+sub read_session {
 	my $this = $_[0];
 	my $sessid = $this->{cgi}->cookie('sessid');
 	return unless $this->{dbi}; # Skip bad connects
@@ -304,7 +338,7 @@ sub is_clan_leader {
 
 sub is_clan_moderator {
 	my ($c, $clan_id) = @_;
-	my $clan_info = $c->getclan($clan_id);
+	my $clan_info = $c->clan_info($clan_id);
 	my $isadmin;
 	if ($c->{phpbbsess}{groupids}) {
 		foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
@@ -314,9 +348,9 @@ sub is_clan_moderator {
 	return $isadmin;
 }
 
-sub getoption {
+sub get_option {
 	my ($this, $name, $period) = @_;
-	$period ||= $this->{periodid};
+	$period ||= $this->{period_info}{id};
 	return $this->db_selectone("SELECT value FROM options WHERE clanperiod = ? AND name = ?", {}, $period, $name);
 }
 
@@ -406,19 +440,6 @@ sub end_form {
 sub escapeHTML {
 	my $this = shift;
 	return $this->{cgi}->escapeHTML(@_);
-}
-
-sub begin_form {
-	my $this = shift;
-	if (shift eq 'get') {
-		print $this->{cgi}->start_form(-method => 'GET', -action => '?');
-	} else {
-		print $this->{cgi}->start_form(-method => 'POST', -action => 'index.pl');
-	}
-	while (my $name = shift) {
-		my $val = shift;
-		print $this->hidden($name, $val);
-	}
 }
 
 sub list {

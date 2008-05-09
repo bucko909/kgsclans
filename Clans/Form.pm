@@ -67,13 +67,13 @@ sub process_form {
 			print $c->p("Failure: $reason");
 		}
 		if ($params{member_id}) {
-			print $c->p(qq|<a href="admin.pl?member_id=$params{member_id}">To member admin</a>.|);
+			print $c->p(qq|To member <a href="admin.pl?member_id=$params{member_id}">admin</a> or <a href="index.pl?page=games&amp;memberid=$params{member_id}">game list</a>.|);
 		}
 		if ($params{team_id}) {
 			print $c->p(qq|<a href="admin.pl?team_id=$params{team_id}">To team admin</a>.|);
 		}
 		if ($params{clan_id}) {
-			print $c->p(qq|<a href="admin.pl?clan_id=$params{clan_id}">To clan admin</a>.|);
+			print $c->p(qq|To clan <a href="admin.pl?clan_id=$params{clan_id}">admin</a> or <a href="index.pl?page=clan&amp;clanid=$params{clan_id}">member list</a>.|);
 		}
 		if ($c->is_admin) {
 			print $c->p(qq|<a href="admin.pl">To overall admin</a>.|);
@@ -103,6 +103,7 @@ sub no_access {
 sub gen_form {
 	my ($c, $name, $category) = @_;
 	return unless $forms{$name};
+	$category ||= $forms{$name}{category}[0];
 	my ($output_params, $output_params_info) = &parse_form_def($c, $name);
 	return $output_params unless $output_params_info;
 	my $ret = &fill_values($c, $name, $output_params, $output_params_info);
@@ -238,7 +239,7 @@ sub fill_values {
 			# It may be that we have enough information to produce a list of
 			# possibilities. (This is pretty normal for ids.) If we can, get
 			# that list now. If the list already exists, we must union it.
-			if (my $list_fn = $type_info->{definition}{list}) {
+			if ((my $list_fn = $type_info->{definition}{list}) && !$type_info->{valid_new}) {
 				my $new_vals = $list_fn->($c, @params);
 				# If null is valid, we can place it in the list at the top.
 				unshift @$new_vals, [ "", "None" ] if $new_vals && $type_info->{null_valid};
@@ -331,7 +332,6 @@ sub output_form {
 			}
 			$output .= qq|</td>|;
 			my $readonly = grep { $_ eq $category } @{$info->{forms_info}{readonly} || $info->{type_defaults}{readonly} || []};
-			print "$readonly $category";
 			if ($readonly) {
 				my $value_display;
 				if ($value && $info->{value_list}) {
