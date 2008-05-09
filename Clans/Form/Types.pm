@@ -120,7 +120,42 @@ name_clan => {
 			return 1;
 		}
 	},
-#	list => sub { },
+	get => sub {
+		my ($c, $period, $clan_id) = @_;
+		if ($period && $clan_id) {
+			return $c->db_selectone("SELECT name FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+		} else {
+			return;
+		}
+	},
+},
+info_clan => {
+	check => sub {
+		1
+	},
+	exists => undef,
+	get => sub {
+		my ($c, $period, $clan_id) = @_;
+		if ($period && $clan_id) {
+			return $c->db_selectone("SELECT looking FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+		} else {
+			return;
+		}
+	},
+},
+url_clan => {
+	check => sub {
+		m#^http://[a-zA-Z0-9.]+(?::[0-9]+)?/\S*$#
+	},
+	exists => undef,
+	get => sub {
+		my ($c, $period, $clan_id) = @_;
+		if ($period && $clan_id) {
+			return $c->db_selectone("SELECT url FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+		} else {
+			return;
+		}
+	},
 },
 tag_clan => {
 	defaults => {
@@ -140,7 +175,14 @@ tag_clan => {
 			return 1;
 		}
 	},
-#	list => sub { },
+	get => sub {
+		my ($c, $period, $clan_id) = @_;
+		if ($period && $clan_id) {
+			return $c->db_selectone("SELECT tag FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+		} else {
+			return;
+		}
+	},
 },
 id_kgs => {
 	defaults => {
@@ -258,7 +300,6 @@ name_member => {
 			return $c->db_selectone("SELECT members.name FROM members WHERE members.id = ?", {}, $memberid);
 		}
 	}
-#	list => sub { },
 },
 rank_member => {
 	defaults => {
@@ -268,7 +309,12 @@ rank_member => {
 		/^[a-zA-Z0-9 ,.-]*%?[a-zA-Z0-9 ,.-]*$/
 	},
 	exists => undef,
-#	list => sub { },
+	get => sub {
+		my ($c, $period, $clan, $memberid) = @_;
+		if ($memberid) {
+			return $c->db_selectone("SELECT members.rank FROM members WHERE members.id = ?", {}, $memberid);
+		}
+	}
 },
 id_brawlteam => {
 	defaults => {

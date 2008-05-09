@@ -505,7 +505,7 @@ sub bad_value {
 				if ($ret && $must_not_exist) {
 					return "cannot use an existing value";
 				} elsif (!$ret && $must_exist) {
-					return "must use an existing value";
+					return "must use an existing value ($_)";
 				}
 			} elsif (!exists $type->{definition}{exists}) {
 				return "existence check requested but none available";

@@ -728,23 +728,23 @@ sub main_renderpage {
 
 sub clan_forummembers {
 	my ($c, $name, @params) = @_;
-	return 'No clan' unless $c->{clanid};
+	return 'No clan' unless $c->{clan_info};
 	"<ul>".
 		(join '', map{
 			qq|<li><a href="/forum/profile.php?mode=viewprofile&amp;u=$_->[0]">$_->[1]</a></li>|
 		}
-		@{$c->db_select("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_users INNER JOIN phpbb3_user_group ON phpbb3_users.user_id = phpbb3_user_group.user_id INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_group_id WHERE clans.id = ? ORDER BY username", {}, $c->{clanid})})
+		@{$c->db_select("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_users INNER JOIN phpbb3_user_group ON phpbb3_users.user_id = phpbb3_user_group.user_id INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_group_id WHERE clans.id = ? ORDER BY username", {}, $c->{clan_info}{id})})
 	."</ul>";
 }
 
 sub clan_forummoderators {
 	my ($c, $name, @params) = @_;
-	return 'No clan' unless $c->{clanid};
+	return 'No clan' unless $c->{clan_info};
 	"<ul>".
 		(join '', map{
 			qq|<li><a href="/forum/profile.php?mode=viewprofile&amp;u=$_->[0]">$_->[1]</a></li>|
 		}
-		@{$c->db_select("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_users INNER JOIN phpbb3_user_group ON phpbb3_users.user_id = phpbb3_user_group.user_id INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_leader_group_id WHERE clans.id = ? ORDER BY username", {}, $c->{clanid})})
+		@{$c->db_select("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_users INNER JOIN phpbb3_user_group ON phpbb3_users.user_id = phpbb3_user_group.user_id INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_leader_group_id WHERE clans.id = ? ORDER BY username", {}, $c->{clan_info}{id})})
 	."</ul>";
 }
 

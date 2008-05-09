@@ -223,6 +223,10 @@ set_clan_name => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		oldname => {
+			type => 'valid|name_clan($period_id, $clan_id)',
+			hidden => [ qw/clan admin/ ],
+		},
 		newname => {
 			type => 'valid_new|name_clan($period_id, $clan_id)',
 			brief => 'New name',
@@ -252,6 +256,11 @@ set_clan_tag => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		oldtag => {
+			type => 'valid|tag_clan($period_id, $clan_id)',
+			brief => 'Old tag',
+			readonly => [ qw/clan admin/ ],
+		},
 		newtag => {
 			type => 'valid_new|tag_clan($period_id, $clan_id)',
 			brief => 'New tag',
@@ -280,8 +289,13 @@ set_clan_url => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		oldurl => {
+			type => 'valid|null_valid|url_clan($period_id,$clan_id)',
+			brief => 'Old URL',
+			readonly => [ qw/clan admin/ ],
+		},
 		newurl => {
-			type => 'null_valid|url',
+			type => 'null_valid|url_clan($period_id,$clan_id)',
 			brief => 'New URL',
 			description => 'If the check on this fails, please mention it on the Admin Stuff forum.',
 		},
@@ -308,8 +322,13 @@ set_clan_info => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		oldinfo => {
+			type => 'valid|null_valid|info_clan($period_id,$clan_id)',
+			brief => 'Old description',
+			readonly => [ qw/clan admin/ ],
+		},
 		newinfo => {
-			type => 'null_valid|text',
+			type => 'null_valid|info_clan($period_id,$clan_id)',
 			brief => 'New description',
 			description => 'If your chosen description is not allowed, and you\'re trying to put something sensible in, please mention it on the Admin Stuff forum.',
 		},
@@ -471,6 +490,10 @@ remove_clan_member => {
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
+		name => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member clan admin/ ],
+		},
 	],
 	action => sub {
 		my ($c, $p) = @_;
@@ -532,7 +555,11 @@ set_clan_brawl_team_name => {
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
-		team_name => {
+		oldname => {
+			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => [ qw/brawl clan admin/ ],
+		},
+		newname => {
 			type => 'valid_new|name_brawlteam($period_id,$clan_id,$team_id)',
 			brief => 'New name',
 			description => 'If you find some symbol that isn\'t allowed, plase complain in the Admin Stuff forum.',
@@ -540,7 +567,7 @@ set_clan_brawl_team_name => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		if ($c->db_do('UPDATE brawl_teams SET name=? WHERE team_id=?', {}, $p->{team_name}, $p->{team_id})) {
+		if ($c->db_do('UPDATE brawl_teams SET name=? WHERE team_id=?', {}, $p->{newname}, $p->{team_id})) {
 			return (1, "Renamed brawl team.");
 		} else {
 			return (0, "Database error.");
@@ -561,6 +588,10 @@ remove_clan_brawl_team => {
 		},
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
+		},
+		name => {
+			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => [ qw/brawl clan admin/ ],
 		},
 	],
 	action => sub {
@@ -590,8 +621,16 @@ remove_member_from_brawl => {
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
+		team_name => {
+			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => [ qw/brawl clan admin/ ],
+		},
 		member_id => {
 			type => 'null_valid|id_member($period_id,$clan_id,$team_id)',
+		},
+		member_name => {
+			type => 'valid|null_valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/brawl clan admin/ ],
 		},
 	],
 	action => sub {
@@ -627,8 +666,16 @@ add_member_to_brawl => {
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
+		team_name => {
+			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => [ qw/member brawl clan admin/ ],
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
+		},
+		member_name => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member brawl clan admin/ ],
 		},
 	],
 	action => sub {
@@ -666,8 +713,16 @@ set_brawl_pos => {
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
+		team_name => {
+			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => [ qw/member brawl clan admin/ ],
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id,$team_id)',
+		},
+		member_name => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member brawl clan admin/ ],
 		},
 		pos_id => {
 			type => 'null_valid|enum(1,2,3,4,5)',
@@ -703,7 +758,11 @@ set_member_name => {
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
-		member_name => {
+		oldname => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member clan admin/ ],
+		},
+		newname => {
 			type => 'valid_new|name_member($period_id,$clan_id,$member_id)',
 			brief => 'New name',
 			description => 'Complain in the Admin Stuff forum if something you want to use here doesn\'t work.',
@@ -711,7 +770,7 @@ set_member_name => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		if (!$c->db_do('UPDATE members SET name=? WHERE id=?', {}, $p->{member_name}, $p->{member_id})) {
+		if (!$c->db_do('UPDATE members SET name=? WHERE id=?', {}, $p->{newname}, $p->{member_id})) {
 			return (0, "Database error.");
 		} else {
 			return (1, "Renamed member.");
@@ -733,7 +792,16 @@ set_member_rank => {
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
-		member_rank => {
+		name => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member clan admin/ ],
+		},
+		oldrank => {
+			type => 'valid|null_valid|rank_member($period_id,$clan_id,$member_id)',
+			brief => 'Old rank',
+			readonly => [ qw/member clan admin/ ],
+		},
+		newrank => {
 			type => 'null_valid|rank_member($period_id,$clan_id,$member_id)',
 			brief => 'New rank',
 			description => 'Complain in the Admin Stuff forum if something you want to use here doesn\'t work.',
@@ -741,7 +809,7 @@ set_member_rank => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		if (!$c->db_do('UPDATE members SET rank=? WHERE id=?', {}, $p->{member_rank}, $p->{member_id})) {
+		if (!$c->db_do('UPDATE members SET rank=? WHERE id=?', {}, $p->{newrank}, $p->{member_id})) {
 			return (0, "Database error.");
 		} else {
 			return (1, "Changed rank.");
@@ -762,6 +830,10 @@ add_member_alias => {
 		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
+		},
+		name => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member clan admin/ ],
 		},
 		member_alias => {
 			type => 'valid_new|name_kgs($period_id)',
@@ -794,6 +866,10 @@ remove_member_alias => {
 		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
+		},
+		name => {
+			type => 'valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => [ qw/member clan admin/ ],
 		},
 		alias_id => {
 			type => 'id_kgs($period_id,$clan_id,$member_id)',
