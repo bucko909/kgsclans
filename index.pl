@@ -800,7 +800,11 @@ sub main_format {
 			}
 		},
 		MEMBER => sub {
-			return $_[0]->render_member($_[0]->{member_info}{id});
+			if ($_[0]->{member_info}) {
+				return $_[0]->render_member($_[0]->{member_info}{id});
+			} else {
+				return "No member specified.";
+			}
 		},
 		CLANID => sub {
 			return $_[0]->{clan_info}{id};
