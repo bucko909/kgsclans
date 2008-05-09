@@ -450,7 +450,7 @@ sub period_clantable {
 	my %period_clans_table = (
 		%TABLEROWS,
 		ROWINIT => {
-			sqlcols => [qw/got100time/],
+			sqlcols => [qw/clans.got100time/],
 			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
 			           "LEFT OUTER JOIN members ON clans.leader_id = members.id" ], # Ensure this happens
 			init => sub { },
@@ -498,8 +498,8 @@ sub membertable {
 	my %clan_members_table = (
 		%TABLEROWS,
 		ROWINIT => {
-			sqlcols => [ qw/played played_pure/ ],
-			joins => [ "INNER JOIN clans ON clans.id = members.clan_id" ], # Ensure this happens
+			sqlcols => [ qw/members.played members.played_pure/ ],
+			joins => [ "  INNER JOIN clans ON clans.id = members.clan_id" ], # Ensure this happens
 			init => sub { },
 			class => sub { $_[0] + $_[1] >= $reqpoints ? " class=\"qualified\"" : "" },
 		},
@@ -591,6 +591,9 @@ sub main_drawtable {
 	$extra ||= "";
 #	return("SELECT $selcols FROM $maintable $joins WHERE $where GROUP BY $maintable.id $sqlsort $extra;");
 	my $info = $c->db_select("SELECT $selcols FROM $maintable $joins WHERE $where GROUP BY $maintable.id $sqlsort $extra;");
+	if (!$info) {
+		print STDERR "SELECT $selcols FROM $maintable $joins WHERE $where GROUP BY $maintable.id $sqlsort $extra;\n";
+	}
 
 #	# Do sort.
 #	{
