@@ -477,11 +477,12 @@ sub period_topplayers {
 sub membertable {
 	my ($c, $clan, $cols, $sort) = @_;
 	my $clause;
-	if ($clan eq 'all') {
+	if ($clan && $clan eq 'all') {
 		$clause = "clans.clanperiod = ".$c->{period_info}{id};
 	} else {
 		if (!$clan || $clan =~ /[^0-9]/) {
 			if ($c->{clan_info}) {
+				print STDERR "Test. $c->{clan_info}\n";
 				$clause = "members.clan_id = ".$c->{clan_info}{id};
 			} elsif ($clan) {
 				return "\"$clan\" is not a valid clan ID.";
@@ -514,7 +515,6 @@ sub member_gametable {
 		if ($c->{member_info}) {
 			$memberid = $c->{member_info}{id};
 		} elsif ($memberid) {
-			$memberid ||= "";
 			return "\"$memberid\" is not a valid member ID.";
 		} else {
 			return "No member specified";
@@ -789,7 +789,11 @@ sub main_format {
 			return ($c->{phpbbsess} ? "$c->{phpbbsess}{summary}" : "anonymous (no session)");
 		},
 		CLAN => sub {
-			return $_[0]->render_clan($_[0]->{clan_info}{id});
+			if ($_[0]->{clan_info}) {
+				return $_[0]->render_clan($_[0]->{clan_info}{id});
+			} else {
+				return "?";
+			}
 		},
 		CLANS => sub {
 			my $clans = $c->param("clans");
@@ -803,11 +807,15 @@ sub main_format {
 			if ($_[0]->{member_info}) {
 				return $_[0]->render_member($_[0]->{member_info}{id});
 			} else {
-				return "No member specified.";
+				return "?";
 			}
 		},
 		CLANID => sub {
-			return $_[0]->{clan_info}{id};
+			if ($_[0]->{clan_info}) {
+				return $_[0]->{clan_info}{id};
+			} else {
+				return "?";
+			}
 		},
 	);
 	if ($main_formats{$name}) {
