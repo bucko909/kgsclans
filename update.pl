@@ -18,15 +18,14 @@ our ($lwp_response, $page_fail);
 
 $|=1; # Turn off output buffering.
 
-
-our ($periodid, $starttime, $endtime) = $c->getperiod;
-$c->setperiod($periodid);
+my $period_info = $c->period_info;
+our ($periodid, $starttime, $endtime) = ($period_info->{id}, $period_info->{startdate}, $period_info->{enddate});
 our ($csec, $cmin, $chr, $cday, $cmon, $cyear) = gmtime();
 $cyear += 1900;
 
-our $reqpoints = $c->getoption('BRAWLPOINTS');
-our $reqgames = $c->getoption('BRAWLGAMES');
-our $reqpure = $c->getoption('BRAWLPURE');
+our $reqpoints = $c->get_option('BRAWLPOINTS');
+our $reqgames = $c->get_option('BRAWLGAMES');
+our $reqpure = $c->get_option('BRAWLPURE');
 
 if (!defined $reqpoints) {
 	print "Unknown number of points required...\n";
@@ -305,7 +304,7 @@ sub parsegame {
 			return;
 		} else {
 			# We should immediately insert a placeholder
-			if (!$c->db_do("INSERT INTO games VALUES(NULL, ?, ?, '', '', NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL)", {}, $url, $time)) {
+			if (!$c->db_do("INSERT INTO games VALUES(NULL, ?, ?, '', '', NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL)", {}, $url, $time)) {
 				print $c->p("<b>Error adding game placeholder: ".DBI->errstr."</b>\n");
 				return;
 			}
@@ -485,7 +484,7 @@ sub parsegame {
 	# Insert into games and update users.
 	if (!$gameid) {
 		# We already have a placeholder
-		if (!$c->db_do("UPDATE games SET time=?, white=?, black=?, white_id=?, black_id=?, result=?, result_by=?, komi=?, handicap=?, white_decision=?, black_decision=?, ruleset=? WHERE id=$newid", {}, $time, $white, $black, (@white_decision ? undef : $white_id), (@black_decision ? undef : $black_id), $result, $result_by, $komi, $handi, join(',',@white_decision), join(',',@black_decision), $rules, $newid)) {
+		if (!$c->db_do("UPDATE games SET time=?, white=?, black=?, white_id=?, black_id=?, result=?, result_by=?, komi=?, handicap=?, white_decision=?, black_decision=?, ruleset=?, moves=? WHERE id=?", {}, $time, $white, $black, (@white_decision ? undef : $white_id), (@black_decision ? undef : $black_id), $result, $result_by, $komi, $handi, join(',',@white_decision), join(',',@black_decision), $rules, $moves, $newid)) {
 			print $c->p("<b>Error adding game: ".DBI->errstr."</b>\n");
 		}
 
