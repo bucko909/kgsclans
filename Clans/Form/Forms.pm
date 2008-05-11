@@ -395,7 +395,7 @@ add_clan_member => {
 	action => sub {
 		my ($c, $p) = @_;
 
-		$p->{max_members} = $c->getoption('MEMBERMAX', $p->{period_id});
+		$p->{max_members} = $c->get_option('MEMBERMAX', $p->{period_id});
 		my $currentmembers_list = $c->db_select('SELECT members.id FROM members INNER JOIN aliases ON members.id = aliases.member_id WHERE members.clan_id = ? GROUP BY members.id', {}, $p->{clan_id}); ## Hax
 		$p->{current_members} = @$currentmembers_list;
 		if ($p->{current_members} >= $p->{max_members}) {
@@ -681,12 +681,12 @@ add_member_to_brawl => {
 	action => sub {
 		my ($c, $p) = @_;
 		$c->db_do('DELETE FROM brawl_team_members WHERE member_id = ?', {}, $p->{member_id});
-		$p->{req_points} = $c->getoption('BRAWLMEMBERPOINTS', $p->{period_id});
+		$p->{req_points} = $c->get_option('BRAWLMEMBERPOINTS', $p->{period_id});
 		$p->{current_points} = $c->db_selectone('SELECT played + played_pure FROM members WHERE id = ?', {}, $p->{member_id}) || 0;
 		if ($p->{current_points} < $p->{req_points}) {
 			return (0, "This member has not played enough games.");
 		}
-		$p->{max_members} = $c->getoption('BRAWLMAXMEMBERS', $p->{period_id});
+		$p->{max_members} = $c->get_option('BRAWLMAXMEMBERS', $p->{period_id});
 		$p->{current_members} = $c->db_selectone('SELECT COUNT(*) FROM brawl_team_members WHERE team_id = ?', {}, $p->{team_id}) || 0;
 		if ($p->{current_members} >= $p->{max_members}) {
 			return (0, "This team has too many members.");
