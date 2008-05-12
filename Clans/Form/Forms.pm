@@ -14,7 +14,7 @@ add_clan => {
 			type => 'id_clanperiod',
 		},
 		name => {
-			type => 'valid_new|name_clan',
+			type => 'valid_new|name_clan($period_id)',
 			brief => 'Clan name',
 		},
 		forum_user_id => {
@@ -35,48 +35,43 @@ add_clan => {
 		tag => {
 			type => 'valid_new|tag_clan($period_id)',
 			brief => 'Tag',
-			description => 'This must be 2-4 alphanumeric charactersi.',
+			description => 'This must be 2-4 alphanumeric characters.',
 		},
 	],
 	action => sub {
 		my ($c, $p) = @_;
 		if (!$c->db_do('INSERT INTO clans SET name=?, tag=?, regex=?, clanperiod=?;', {}, $p->{name}, $p->{tag}, $p->{tag}, $p->{period_id})) {
-			return (0, "Database error.");
+			return (0, "Database error during clan addition.");
 		}
-		$p->{leader_name_} = $p->{leader_name} || $p->{leader_kgs};
+		$p->{actual_leader_name} = $p->{leader_name} || $p->{leader_kgs};
 		$p->{clan_id} = $c->lastid;
-		if (!$c->db_do('INSERT INTO members SET name=?, clan_id=?;', {}, $p->{leader_name}, $p->{clan_id})) {
+		if (!$c->db_do('INSERT INTO members SET name=?, clan_id=?;', {}, $p->{actual_leader_name}, $p->{clan_id})) {
 			$c->db_do('DELETE FROM clans WHERE id=?', {}, $p->{clan_id});
-			return (0, "Database error.");
+			return (0, "Database error during leader addition.");
 		}
 		$p->{leader_id} = $c->lastid;
 		if (!$c->db_do('INSERT INTO aliases SET nick=?, member_id=?, clanperiod=?, activity=?;', {}, $p->{leader_kgs}, $p->{leader_id}, $p->{period_id}, time())) {
 			$c->db_do('DELETE FROM clans WHERE id=?', {}, $p->{clan_id});
 			$c->db_do('DELETE FROM members WHERE id=?', {}, $p->{leader_id});
-			return (0, "Database error.");
+			return (0, "Database error during alias addition.");
 		}
 		if (!$c->db_do('UPDATE clans SET leader_id=? WHERE id=?;', {}, $p->{leader_id}, $p->{clan_id})) {
-			$c->log('ADDCLAN_FAIL', $p);
 			$c->db_do('DELETE FROM clans WHERE id=?', {}, $p->{clan_id});
 			$c->db_do('DELETE FROM members WHERE id=?', {}, $p->{leader_id});
 			$c->db_do('DELETE FROM aliases WHERE member_id=?', {}, $p->{leader_id});
-			return (0, "Database error.");
+			return (0, "Database error during leader setting.");
 		}
 
 		# Now add the forum
 		if (!$c->db_do("SET \@forum_user = ?, \@clan_id = ?", {}, $p->{forum_user_id}, $p->{clan_id})) {
-			return (0, "Database error.");
+			return (0, "Database error during forum add. Get bucko to fix this; changes were not rolled back!");
 		}
 		my @SQL = (
-			# Set options for standard groups
+			# Haul out some useful values.
 			"SELECT \@guest_group := group_id FROM phpbb3_groups WHERE group_name = 'GUESTS'",
 			"SELECT \@registered_group := group_id FROM phpbb3_groups WHERE group_name = 'REGISTERED'",
 			"SELECT \@bot_group := group_id FROM phpbb3_groups WHERE group_name = 'BOTS'",
 			"SELECT \@admin_group := group_id FROM phpbb3_groups WHERE group_name = 'ADMINISTRATORS'",
-			"INSERT INTO phpbb3_acl_groups SELECT \@guest_group, \@newforum, 0, role_id, 1 FROM phpbb3_acl_roles WHERE role_name IN ('ROLE_FORUM_NOACCESS')",
-			"INSERT INTO phpbb3_acl_groups SELECT \@registered_group, \@newforum, 0, role_id, 1 FROM phpbb3_acl_roles WHERE role_name IN ('ROLE_FORUM_NOACCESS')",
-			"INSERT INTO phpbb3_acl_groups SELECT \@bot_group, \@newforum, 0, role_id, 1 FROM phpbb3_acl_roles WHERE role_name IN ('ROLE_FORUM_NOACCESS')",
-			"INSERT INTO phpbb3_acl_groups SELECT \@admin_group, \@newforum, 0, role_id, 1 FROM phpbb3_acl_roles WHERE role_name IN ('ROLE_FORUM_FULL')",
 
 			"SET \@proposals_forum = 3",
 			"SELECT \@leaders_group := group_id FROM phpbb3_groups WHERE group_name = 'Clan Leaders'",
@@ -85,19 +80,20 @@ add_clan => {
 			"SELECT \@bot_group := group_id FROM phpbb3_groups WHERE group_name = 'BOTS'",
 			"SELECT \@admin_group := group_id FROM phpbb3_groups WHERE group_name = 'ADMINISTRATORS'",
 
+			"SELECT \@clan_name := name FROM clans WHERE id = \@clan_id",
+
 			# Create groups
-			"INSERT INTO phpbb_groups SET group_type = 1, group_name = \@clan_name, group_desc = '', group_type = 1",
+			"INSERT INTO phpbb3_groups SET group_type = 1, group_name = \@clan_name, group_desc = ''",
 			"SET \@clan_group = LAST_INSERT_ID()",
-			"INSERT INTO phpbb_groups SET group_type = 1, group_name = CONCAT(\@clan_name, ' Moderators'), group_desc = '', group_type = 1",
+			"INSERT INTO phpbb3_groups SET group_type = 1, group_name = CONCAT(\@clan_name, ' Moderators'), group_desc = ''",
 			"SET \@clan_leader_group = LAST_INSERT_ID()",
 
 			# Add leader to groups
-			"INSERT INTO phpbb_user_group SET group_id = \@clan_group, user_id = \@forum_user, user_pending = 0, group_leader = 1",
-			"INSERT INTO phpbb_user_group SET group_id = \@clan_leader_group, user_id = \@forum_user, user_pending = 0, group_leader = 1",
-			"INSERT INTO phpbb_user_group SET group_id = \@leaders_group, user_id = \@forum_user, user_pending = 0, group_leader = 0",
+			"INSERT INTO phpbb3_user_group SET group_id = \@clan_group, user_id = \@forum_user, user_pending = 0, group_leader = 1",
+			"INSERT INTO phpbb3_user_group SET group_id = \@clan_leader_group, user_id = \@forum_user, user_pending = 0, group_leader = 1",
+			"INSERT INTO phpbb3_user_group SET group_id = \@leaders_group, user_id = \@forum_user, user_pending = 0, group_leader = 0",
 
 			# Add clan forum
-			"SELECT \@clan_name := name FROM clans WHERE id = \@clan_id",
 			"SELECT \@right := right_id FROM phpbb3_forums WHERE forum_id = 47",
 			"UPDATE phpbb3_forums SET left_id = left_id + 2 WHERE left_id > \@right",
 			"UPDATE phpbb3_forums SET right_id = right_id + 2 WHERE right_id >= \@right",
@@ -126,7 +122,7 @@ add_clan => {
 		foreach my $SQL (@SQL) {
 			if (!$c->db_do($SQL)) {
 				# Cry. The cleanup here will be terrible horrible.
-				return (0, "Database error.");
+				return (0, "Database error during forum add. Get bucko to fix this; changes were not rolled back!");
 			}
 		}
 		my $results = $c->db_select("SELECT \@newforum, \@clan_group, \@clan_leader_group");

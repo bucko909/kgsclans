@@ -1,7 +1,11 @@
 #!/usr/bin/perl
 
+use warnings;
+use strict;
 use Clans;
 use Clans::Form;
+use Carp qw/cluck/;
+$SIG{__WARN__} = sub { cluck $_[0] };
 
 my $c = new Clans;
 

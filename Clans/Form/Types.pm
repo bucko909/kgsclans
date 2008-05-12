@@ -289,6 +289,9 @@ name_member => {
 			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND members.name = ? AND members.id != ?", {}, $period, $clan, $_, $memberid);
 		} elsif ($period && $clan) {
 			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND members.name = ?", {}, $period, $clan, $_);
+		} elsif ($period) {
+			# Normally nonsense, but it's used in the case of creation of a new clan.
+			return 0;
 		} else {
 			# Nonsense
 			return 1;
@@ -450,11 +453,11 @@ id_forum => {
 	},
 	exists => sub {
 		my ($c) = @_;
-		return $c->db_selectone("SELECT user_id FROM phpbb_users WHERE user_id = ?", {}, $_);
+		return $c->db_selectone("SELECT user_id FROM phpbb3_users WHERE user_id = ?", {}, $_);
 	},
 	list => sub {
 		my ($c) = @_;
-		return $c->db_select("SELECT user_id, username FROM phpbb_users");
+		return [ sort { lc $a->[1] cmp lc $b->[1] } @{$c->db_select("SELECT user_id, username FROM phpbb3_users")} ];
 	},
 },
 );
