@@ -1,0 +1,12 @@
+CREATE TEMPORARY TABLE foo SELECT members.id AS member_id, COUNT(*) AS num FROM games INNER JOIN members ON white_id = members.id OR black_id = members.id WHERE black_id != 0 OR white_id != 0 GROUP BY members.id;
+UPDATE members INNER JOIN foo ON members.id = foo.member_id SET played = foo.num;
+DROP TABLE foo;
+CREATE TEMPORARY TABLE foo SELECT members.id AS member_id, COUNT(*) AS num FROM games INNER JOIN members ON (white_id = members.id AND result=-1) OR (black_id = members.id AND result=1) WHERE black_id != 0 OR white_id != 0 GROUP BY members.id;
+UPDATE members INNER JOIN foo ON members.id = foo.member_id SET won = foo.num;
+DROP TABLE foo;
+CREATE TEMPORARY TABLE foo SELECT members.id AS member_id, COUNT(*) AS num FROM games INNER JOIN members ON white_id = members.id OR black_id = members.id WHERE black_id != 0 AND white_id != 0 GROUP BY members.id;
+UPDATE members INNER JOIN foo ON members.id = foo.member_id SET played_pure = foo.num;
+DROP TABLE foo;
+CREATE TEMPORARY TABLE foo SELECT members.id AS member_id, COUNT(*) AS num FROM games INNER JOIN members ON (white_id = members.id AND result=-1) OR (black_id = members.id AND result=1) WHERE black_id != 0 AND white_id != 0 GROUP BY members.id;
+UPDATE members INNER JOIN foo ON members.id = foo.member_id SET won_pure = foo.num;
+DROP TABLE foo;
