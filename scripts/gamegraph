@@ -1,0 +1,74 @@
+mysql -se 'SELECT time, IF(black_id IS NOT NULL,1,0)+IF(white_id IS NOT NULL,1,0) AS clanfactor FROM games WHERE time > 1196532000 HAVING clanfactor > -1'| \
+perl -MPOSIX -ne '
+	($a,$b)=split /\s+/;
+	print strftime("%u %H:%M $b $c\n", gmtime $a)'| \
+sort | \
+$1 | \
+perl -ne '
+	BEGIN{
+		$length = 3;
+		$gamelength = 30;
+		$height = 1;
+		$mult = 1;
+		$font = 7;
+		$number = 60 / $length;
+		$total = 24 * $number;
+		$gametick = $gamelength / $length;
+		$u[0] = [];
+		$u[1] = [];
+		$u[2] = [];
+	}
+	/(\d) (\d\d):(\d\d) (\d)/;
+	$b = $2 * $number + int($3/$length);
+	for(0..$gametick-1) {
+		for $t (0..$4) {
+			$u[2-$t][($b+$_)%$total]++;
+		}
+	}
+	for $t (0..$4) {
+		$v[2-$t][$2]++;
+	}
+	END{
+		print <<END;
+<html>
+	<head>
+		<style>
+			body { background: white; text-color: black; }
+			table, tr, td, th { boder-collapse: collapse; border-spacing: 0px; border-left: 1px solid black; vertical-align: top; }
+			td { font-size: ${font}px; }
+			td.graph { padding: 0px; margin: 0px; font-size: 1px; }
+			div { height: ${height}px; display: inline-block; }
+			div.games0 { background-color: red; }
+			div.games1 { background-color: green; }
+			div.games2 { background-color: blue; }
+		</style>
+	</head>
+	<body>
+		<table>
+			<tr><th>Time</th><th colspan="3">Games</th><th>Graph</th></tr>
+END
+		for(0..$total-1){
+			$h = int($_/$number);
+			$m = ($_ % $number) * $length;
+			if ($m == 0) {
+				if ($h != 0) {
+					print "</td></tr>";
+				}
+				print "<tr><td>".sprintf("%02i:%02i", $h, $m)."</td><td>$v[0][$h]</td><td>$v[1][$h]</td><td>$v[2][$h]</td><td class=\"graph\">";
+			} else {
+				print "<br/>";
+			}
+			$r[0] = $u[0][$_] || 0;
+			$r[1] = $u[1][$_] - $u[0][$_] || 0;
+			$r[2] = $u[2][$_] - $u[1][$_] || 0;
+			for $t (0..2) {
+				$w = $mult * $r[$t];
+				print qq|<div class="games$t" style="width:${w}px"></div>|;
+			}
+		}
+		print "</td></tr>";
+		print <<END;
+	</body>
+</html>
+END
+	}'

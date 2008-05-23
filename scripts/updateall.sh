@@ -5,13 +5,6 @@ REQUEST_METHOD=GET REMOTE_USER=bucko QUERY_STRING='mode=all&delay=10' ./update.p
 cd /home/kgs
 mysql < scripts/makegrids.sql >> /home/kgs/UPDATE.OUT 2>> /home/kgs/UPDATE.ERR
 
-#The following should no longer be needed. update.pl /should/ sort it all out.
-#mysql < update.sql >> /home/kgs/UPDATE.OUT 2>> /home/kgs/UPDATE.ERR
-
-#This is done in update.pl now.
-#J=`mysql -se 'SELECT value-1 FROM options WHERE name = "BRAWLGAMES" AND clanperiod = (SELECT MAX(id) FROM clanperiods)'`
-#mysql -se 'SELECT id FROM clans WHERE clanperiod = (SELECT MAX(id) FROM clanperiods)'|while read I; do mysql -se 'SELECT time FROM games LEFT OUTER JOIN members mb ON mb.id = black_id LEFT OUTER JOIN members mw ON mw.id = white_id WHERE mw.clan_id = '$I' OR mb.clan_id = '$I' ORDER BY time LIMIT '$J',1'|sed s/$/\ $I/; done|(while read I J; do echo "UPDATE clans SET got100time = $I WHERE id = $J;"; done)|mysql
-
 # Log clan points history
 mysql -se 'INSERT INTO clanpoints_history SELECT UNIX_TIMESTAMP(), id, points FROM clans WHERE clanperiod = 5;'
 
