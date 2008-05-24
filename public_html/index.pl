@@ -783,7 +783,7 @@ sub main_format {
 		},
 		ADMINLIST => sub {
 			my $c = $_[0];
-			my $admins = $c->db_select("SELECT name FROM users WHERE adminlevel = 127");
+			my $admins = $c->db_select("SELECT username FROM phpbb3_users NATURAL JOIN phpbb3_user_group NATURAL JOIN phpbb3_groups WHERE group_name = ?", {}, "ADMINISTRATORS");
 			return '<ul>'.(join '', map { "<li>$_->[0]</li>" } @$admins).'</ul>';
 		},
 		USERNAME => sub {
