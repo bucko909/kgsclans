@@ -9,8 +9,6 @@ use POSIX qw/strftime/;
 use CGI;
 use DBI;
 
-$ENV{HOME} = "/home/kgs";
-
 sub new {
 	my $this = {};
 	bless $this;
@@ -36,7 +34,7 @@ sub get_dbi {
 	$password = $1 if $contents =~ /password = (.*)/;
 
 	if (!$user || !$database || !$password) {
-		&die_fatal("Sorry, the .my.cnf file appears to be corrupt");
+		$_[0]->die_fatal("Sorry, the .my.cnf file appears to be corrupt");
 	}
 
 	$_[0]->{dbi} = DBI->connect("dbi:mysql:database=$database", $user, $password);
@@ -448,3 +446,5 @@ sub list {
 	print "<li>$_</li>" foreach(@_);
 	print "</ul>"
 }
+
+1;

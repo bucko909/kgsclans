@@ -3,6 +3,203 @@ use strict;
 use warnings;
 
 our %forms = (
+brawl_draw => {
+	brief => 'Produce draw for next round of the brawl',
+	level => 'admin',
+	category => [ qw/admin/ ],
+	description => 'Produces the draw for the next round of the brawl.',
+	params => [
+		period_id => {
+			type => 'id_clanperiod',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		# Four cases:
+		# - Asked to produce a first round, and there's few enough teams to fit.
+		# - Asked to produce a first round and a preliminary round is needed.
+		# - Asked to produce the first round after preliminaries.
+		# - Asked to produce any other round.
+
+		# First, let's see if this will be the first round of any kind.
+		my $draw_made = $c->db_selectone("SELECT brawldraw.team_id FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ?", {}, $p->{period_id});
+
+		my $insert_team = sub {
+			my ($round, $position, $team, $next) = @_;
+			$c->db_do("INSERT INTO brawldraw SET clanperiod=?, round=?, team_id=?, position=?, nextround_pos=?", {}, $p->{period_id}, $round, $team->[0], $position, $next);
+		};
+
+		# Get a list of team members.
+		my $members = $c->db_select("SELECT brawl.team_id, position, member_id FROM brawl INNER JOIN brawl_teams ON brawl.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ?", {}, $p->{period_id});
+
+		# Sort members into teams.
+		my %team_members;
+		for(@$members) {
+			$team_members{$_->[0]} ||= [];
+			next unless $_->[1] >= 1 && $_->[1] <= 5;
+			$team_members{$_->[0]}[$_->[1]-1] = $_->[2];
+			$team_members{$_->[0]}[5]++;
+		}
+
+		my $insert_members = sub {
+			my ($round, $position, $team) = @_;
+			for(1 .. 5) {
+				$c->db_do("INSERT INTO brawldraw_results SET clanperiod=?, round=?, position=?, seat=?, member_id=?, is_black=?", {}, $p->{period_id}, $round, $position, $_, $team_members{$team->[0]}[$_-1], ($position+$round+$_+1)%2);
+			}
+		};
+
+		if ($draw_made) {
+			# We're making a draw for round having (hopefully) got all results for the previous one.
+			# First we must figure out the "current" round.
+			$p->{last_round} = $c->db_selectone("SELECT MAX(round) FROM brawldraw_results");
+			$p->{this_round} = $p->{last_round} + 1;
+			if ($p->{last_round} == 0) {
+				# We're generating round 1 based on the preliminaries.
+				my $fighting_over = $c->db_select("SELECT nextround_pos FROM brawldraw WHERE clanperiod = ? AND round = 0", {}, $p->{period_id});
+				for my $position (@$fighting_over) {
+					# Get all teams fighting over position
+					my $teams = $c->db_select("SELECT team_id, SUM(position), SUM(IF(result>0,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = 0 AND nextround_pos = ? GROUP BY team_id", {}, $p->{period_id}, $position);
+					# Sort by wins (desc) then position (asc).
+					$teams = [ sort { $b->[2] <=> $a->[2] || $a->[1] <=> $b->[1] } @$teams ];
+					# Insert the winner into the brawl.
+					$insert_team->($p->{this_round}, $position, $teams->[0], int($position/2));
+				}
+			} else {
+				my $winners = $c->db_select("SELECT team_id, nextround_pos FROM brawldraw WHERE clanperiod = ? AND round = ? AND result = 1", {}, $p->{period_id}, $p->{last_round});
+				for my $team (@$winners) {
+					$insert_team->($p->{this_round}, $team->[1], $team, int($team->[1]/2));
+				}
+			}
+		} else {
+			# This is the first round. First, we must decide if we need to produce a preliminary draw.
+			$p->{req_points} = $c->get_option('BRAWLTEAMPOINTS');
+			my @points = split /,/, $p->{req_points};
+
+			$p->{req_members} = $c->get_option('BRAWLTEAMMINMEMBERS');
+
+			$p->{max_rounds} = $c->get_option('BRAWLROUNDS');
+
+			# Get a list of teams.
+			my $teams = $c->db_select("SELECT brawl_teams.team_id, team_number, clans.points, COUNT(member_id) AS number, clans.id FROM brawl_team_members INNER JOIN brawl_teams ON brawl_team_members.team_id = brawl_teams.team_id INNER JOIN clans ON clans.id = brawl_teams.clan_id WHERE clans.clanperiod = ? GROUP BY brawl_teams.team_id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
+
+			use Data::Dumper;
+			print Dumper($teams);
+			print Dumper(\%team_members);
+
+			# Remove all teams which do not have 5 members.
+			$teams = [ grep { $team_members{$_->[0]} && $team_members{$_->[0]}[5] == 5 } @$teams ];
+			print Dumper($teams);
+
+			$p->{current_champion} = $c->get_option('BRAWLCHAMPION');
+
+			# For both below cases, we need to know the seed score for each team.
+			for(0..$#$teams) {
+				$teams->[$_][3] = $teams->[$_][2] / $points[$teams->[$_][1]];
+				# The winner of the last brawl is always seeded top.
+				$teams->[$_][3] = 9001 if $teams->[$_][4] == $p->{current_champion} && $teams->[$_][1] == 1;
+			}
+			@$teams = sort { $b->[3] <=> $a->[3] } @$teams;
+
+			# Generate an order mapping, as this is also used in both cases.
+			# We do this by recursively pairing top with bottom on opponent groups.
+			$p->{max_teams} = 2 ** $p->{max_rounds};
+			my @tree = (0 .. $p->{max_teams} - 1);
+			while(@tree > 1) {
+				my @new_tree;
+				for(0 .. @tree / 2 - 1) {
+					push @new_tree, [$tree[$_], $tree[$#tree-$_]];
+				}
+				@tree = @new_tree;
+			}
+			# Do a depth first search to pull the tree back apart.
+			my $dfs;
+			$dfs = sub { ref $_[0] ? ($dfs->($_[0][0]), $dfs->($_[0][1])) : $_[0] };
+			my @position_map = $dfs->(\@tree);
+				
+			if (@$teams > $p->{max_teams}) {
+				# We must generate a preliminary round.
+				$p->{this_round} = 0;
+
+				# First, who gets auto entry?
+				$p->{auto_entry} = $c->get_option('BRAWLAUTOENTRY');
+				my @auto_teams = splice(@$teams, 0, $p->{auto_entry});
+
+				# Now, the remainder have to duke it out. Currently this is done with 4 special cases,
+				# depending on the number of players competing for a spot.
+
+				$p->{remain_slots} = $p->{max_teams} - $p->{auto_entry};
+				$p->{min_opponents} = int(@$teams/$p->{remain_slots}) - 1; # >= 1 by if condition
+				$p->{teams_on_min} = $p->{remain_slots} - (@$teams % $p->{remain_slots});
+
+				if (($p->{min_opponents} == 3 && $p->{teams_on_min} != @$teams) || $p->{min_opponents} > 3) {
+					# At least one clan is going to have 4 opponents. We don't support that!
+					return (0, "At least one clan will have 4 or more opponents for a brawl slot. A fair solution to this is not known.");
+				}
+
+				if ($p->{min_opponents} == 0) {
+					# In this case, at least one team gets in free. Bung 'em all on auto_teams for now.
+					push @auto_teams, splice(@$teams, 0, $p->{teams_on_min});
+					$p->{remain_slots} -= $p->{teams_on_min};
+					$p->{teams_on_min} = 0;
+					$p->{min_opponents} = 1;
+				}
+
+				$p->{auto_teams} = join ',', map { $_->[0] } @auto_teams;
+				$p->{preliminary_teams} = join ',', map { $_->[0] } @$teams;
+
+				# Now we have a list of teams which need to be blocked together. We do one pass placing the highest seeded teams each in their respective slot, then reverse direction
+				# and place the rest, for example:
+				# 1 2  3 4
+				# 8 7  6 5
+				#     10 9
+				my @fights;
+				for(0..$p->{remain_slots}-1) {
+					$fights[$_] = [$teams->[$_]];
+					for(my $i=2; $i<5; $i++) {
+						push @{$fights[$_]}, $teams->[$p->{remain_slots}*$i-$_] if $teams->[$p->{remain_slots}*$i-$_];
+					}
+				}
+
+				# We now have an array, @fights, which contains the teams to fight over slot n, and an array, @auto_teams, which contains teams who get through automatically.
+
+				# We insert the auto teams first. They live in round 1.
+				my $pos = 0;
+				for my $team (@auto_teams) {
+					my $this_pos = $position_map[$pos++];
+					$insert_team->(1, $this_pos, $team, int($this_pos/2));
+				}
+
+				# The preliminary round is numbered 0, so let's do some insertions. Note that $pos currently tells us the nextround_pos for each group.
+				my $prepos = 0;
+				for my $group (@fights) {
+					my $this_pos = $position_map[$pos++];
+					for (my $t1=0; $t1 < @$group; $t1++) {
+						for (my $t2=$t1+1; $t2 < @$group; $t2++) {
+							$insert_team->($p->{this_round}, $prepos++, $group->[$t1], $this_pos);
+							$insert_team->($p->{this_round}, $prepos++, $group->[$t2], $this_pos);
+						}
+					}
+				}
+			} else {
+				$p->{this_round} = 1;
+				# We are clear and can just generate a normal round.
+				# We insert the auto teams first. They live in round 1.
+				my $pos = 0;
+				for my $team (@$teams) {
+					my $this_pos = $position_map[$pos++];
+					$insert_team->($p->{this_round}, $this_pos, $team, int($this_pos/2));
+				}
+			}
+		}
+		my $teams_to_insert = $c->db_select("SELECT team_id, position FROM brawldraw WHERE clanperiod = ? AND round = ?", {}, $p->{period_id}, $p->{this_round});
+		for my $team (@$teams_to_insert) {
+			$insert_members->($p->{this_round}, $team->[1], $team);
+		}
+		print Dumper($p);
+		return (1, "Draw successfully produced!");
+	},
+},
 add_clan => {
 	# Add clan. Autogen form on admin page.
 	brief => 'Add clan',
@@ -682,7 +879,7 @@ add_member_to_brawl => {
 		if ($p->{current_points} < $p->{req_points}) {
 			return (0, "This member has not played enough games.");
 		}
-		$p->{max_members} = $c->get_option('BRAWLMAXMEMBERS', $p->{period_id});
+		$p->{max_members} = $c->get_option('BRAWLTEAMMAXMEMBERS', $p->{period_id});
 		$p->{current_members} = $c->db_selectone('SELECT COUNT(*) FROM brawl_team_members WHERE team_id = ?', {}, $p->{team_id}) || 0;
 		if ($p->{current_members} >= $p->{max_members}) {
 			return (0, "This team has too many members.");
