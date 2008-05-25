@@ -121,10 +121,10 @@ if ($mode eq 'overview') {
 	}
 	my $round_data;
 	if ($round == -1) {
-		$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw ORDER BY round, position");
+		$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw WHERE clanperiod = ? ORDER BY round, position", {}, $period);
 		print $c->h3("Brawl draw data for all rounds");
 	} else {
-		$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw WHERE round = ? ORDER BY round, position", {}, $round);
+		$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw WHERE clanperiod = ? AND round = ? ORDER BY round, position", {}, $period, $round);
 		print $c->h3("Brawl draw data round $round");
 	}
 	if (@$round_data) {
