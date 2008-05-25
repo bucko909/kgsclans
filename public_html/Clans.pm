@@ -135,7 +135,7 @@ sub header {
 
 	my $period = $cgi->param('period') ? '&amp;period='.$cgi->param('period') : '';
 
-	print qq{<p class=nav><a href="index.pl?page=index$period">Summary</a> | <a href="index.pl?page=stats$period">Stats</a> | <a href="index.pl?page=help$period">Help</a> | <a href="/forum">Forum</a></p>};
+	print qq{<p class=nav><a href="index.pl?page=index$period">Summary</a> | <a href="index.pl?page=stats$period">Stats</a> | <a href="index.pl?page=help$period">Help</a> | <a href="/forum">Forum</a> | <a href="/brawl.pl$period">Brawl</a></p>};
 
 	print $cgi->h2($_[1]) if $_[1];
 	$this->{cgi} = $cgi;

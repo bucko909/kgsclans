@@ -17,16 +17,12 @@ my @modes = qw/overview prelim main battle team team_current round round_current
 
 $mode = 'overview' unless grep { $_ eq $mode } @modes;
 
-my $period = $c->param('period') || 0;
-$period =~ s/\D//g;
-$period ||= 0;
-if (!$c->period_info($period)) {
-	$period = $c->period_info()->{id};
-}
+my $period = $c->period_info()->{id};
+my $periodparam = $c->param('period') ? "&amp;period=$period" : "";
 
 print $c->h3("Quick Links");
 
-print qq{<p><a href="brawl.pl?period=$period">Overview</a> | <a href="brawl.pl?period=$period&amp;mode=prelim">Preliminaries</a> | <a href="brawl.pl?period=$period&amp;mode=main">Main</a> | <a href="brawl.pl?period=$period&amp;mode=round">All battles</a> | <a href="brawl.pl?period=$period&amp;mode=round_current">Current round</a></p>};
+print qq{<p><a href="brawl.pl?$periodparam">Overview</a> | <a href="brawl.pl?mode=prelim$periodparam">Preliminaries</a> | <a href="brawl.pl?mode=main$periodparam">Main</a> | <a href="brawl.pl?mode=round$periodparam">All battles</a> | <a href="brawl.pl?mode=round_current$periodparam">Current round</a></p>};
 
 my $user_clan = $c->db_select("SELECT id, name FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE forumuser_clans.user_id = ?", {}, $c->{userid});
 if (@$user_clan) {
@@ -228,7 +224,7 @@ sub brawl_prelim {
 				}
 				if ($class) {
 					my $gameno = int($info->[1]/2);
-					$link = "brawl.pl?period=$period&amp;mode=battle&amp;round=0&amp;game=$gameno";
+					$link = "brawl.pl?mode=battle&amp;round=0&amp;game=$gameno$periodparam";
 				}
 				$output .= qq|<td style="text-align:center;"$class>|;
 				$output .= qq|<a href="$link">| if $link;
@@ -300,7 +296,7 @@ sub brawl_main_overview {
 					$content = "?";
 				}
 				if ($round == 0 && $has_prelim{$index}) {
-					$content = qq|(<a href="brawl.pl?period=$period&amp;mode=prelim&amp;position=$index">prelim</a>) $content|;
+					$content = qq|(<a href="brawl.pl?mode=prelim&amp;position=$index$periodparam">prelim</a>) $content|;
 				}
 				$output .= qq|<td$rowspan$class>|;
 				$output .= $content;
@@ -308,7 +304,7 @@ sub brawl_main_overview {
 			} elsif (($position + 1) % ($test_size * 2) == $test_size) {
 				# Show a vs
 				my $gameno = int($position/2/$test_size);
-				$output .= qq|<td style="text-align:center;"><a href="brawl.pl?period=$period&amp;mode=battle&amp;round=@{[$round+1]}&amp;game=$gameno">vs.</a></td>|;
+				$output .= qq|<td style="text-align:center;"><a href="brawl.pl?mode=battle&amp;round=@{[$round+1]}&amp;game=$gameno$periodparam">vs.</a></td>|;
 			} elsif (($position + 1) % ($test_size * 2) == 0) {
 				# Show a blank
 				$output .= qq|<td></td>|;
