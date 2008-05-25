@@ -67,8 +67,6 @@ sub process_form {
 		} else {
 			print $c->p("Failure: $reason");
 		}
-		use Data::Dumper;
-		print $c->p(Dumper(\%params));
 		if ($params{member_id}) {
 			print $c->p(qq|To member <a href="admin.pl?member_id=$params{member_id}">admin</a> or <a href="index.pl?page=games&amp;member=$params{member_id}">game list</a>.|);
 		}
