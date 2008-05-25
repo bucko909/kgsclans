@@ -703,13 +703,28 @@ sub clan_brawl_memberlist {
 		return "Team ID \"$teamid\" is invalid";
 	}
 	my $results = $c->db_select("SELECT brawl.position, members.id, members.name, members.rank FROM brawl INNER JOIN members ON members.id = brawl.member_id WHERE brawl.team_id = ? ORDER BY brawl.position", {}, $teamid);
-	my @brawl;
-	return "Team has no members." if !$results;
-	my $result = "<ul>";
-	for(@$results) {
-		$result .= "<li>$_->[0]: ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";
+	my $result = '';
+	if (!$results || !@$results) {
+		$result .= "<p>Team has no roster.</p>";
+	} else {
+		$result .= "<p>Current roster:</p>";
+		$result .= "<ul>";
+		for(@$results) {
+			$result .= "<li>$_->[0]: ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";
+		}
+		$result .= "</ul>";
 	}
-	$result .= "</ul>";
+	$results = $c->db_select("SELECT members.id, members.name, members.rank FROM brawl_team_members LEFT OUTER JOIN brawl ON brawl.team_id = brawl_team_members.team_id AND brawl.member_id = brawl_team_members.member_id INNER JOIN members ON members.id = brawl_team_members.member_id WHERE brawl_team_members.team_id = ? AND brawl.position IS NULL ORDER BY members.name", {}, $teamid);
+	if (!$results || !@$results) {
+		$result .= "<p>Team has no reserves.</p>";
+	} else {
+		$result .= "<p>Reserves:</p>";
+		$result .= "<ul>";
+		for(@$results) {
+			$result .= "<li>".$c->render_member($_->[0], $_->[1], $_->[2])."</li>";
+		}
+		$result .= "</ul>";
+	}
 	return $result;
 }
 
@@ -719,8 +734,7 @@ sub clan_brawl_public_memberlist {
 		return "Team ID \"$teamid\" is invalid";
 	}
 	my $results = $c->db_select("SELECT members.id, members.name, members.rank FROM brawl_team_members INNER JOIN members ON members.id = brawl_team_members.member_id WHERE brawl_team_members.team_id = ? ORDER BY members.name", {}, $teamid);
-	my @brawl;
-	return "Team has no members." if !$results;
+	return "Team has no members." if !$results || !@$results;
 	my $result = "<ul>";
 	for(@$results) {
 		$result .= "<li>".$c->render_member($_->[0], $_->[1], $_->[2])."</li>";

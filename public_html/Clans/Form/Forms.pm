@@ -111,18 +111,20 @@ brawl_draw => {
 			my $teams = $c->db_select("SELECT brawl_teams.team_id, team_number, clans.points, COUNT(member_id) AS number, clans.id FROM brawl_team_members INNER JOIN brawl_teams ON brawl_team_members.team_id = brawl_teams.team_id INNER JOIN clans ON clans.id = brawl_teams.clan_id WHERE clans.clanperiod = ? GROUP BY brawl_teams.team_id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
 
 			# Remove all teams which do not have 5 members.
+			$p->{all_teams} = join ',', map { $_->[0] } @$teams;
 			$teams = [ grep { $team_members{$_->[0]} && $team_members{$_->[0]}[5] == 5 } @$teams ];
+			$p->{culled_teams} = join ',', map { $_->[0] } @$teams;
 
 			$p->{current_champion} = $c->get_option('BRAWLCHAMPION');
 
 			# For both below cases, we need to know the seed score for each team.
-			# TODO does not take into account the "one team per clan" rule.
 			for(0..$#$teams) {
 				$teams->[$_][3] = $teams->[$_][2] / $points[$teams->[$_][1]];
 				# The winner of the last brawl is always seeded top.
 				$teams->[$_][3] = 9001 if $teams->[$_][4] == $p->{current_champion} && $teams->[$_][1] == 1;
 			}
 			@$teams = sort { $b->[3] <=> $a->[3] } @$teams;
+			$p->{sorted_teams} = join ',', map { $_->[0] } @$teams;
 
 			# Generate an order mapping, as this is also used in both cases.
 			# We do this by recursively pairing top with bottom on opponent groups.
@@ -147,6 +149,29 @@ brawl_draw => {
 				# First, who gets auto entry?
 				$p->{auto_entry} = $c->get_option('BRAWLAUTOENTRY');
 				my @auto_teams = splice(@$teams, 0, $p->{auto_entry});
+
+				# Remove any teams which are the second or above from their clan.
+				my $prelim_index = 0;
+				my $moved_something = 1;
+				while($moved_something) {
+					my %clans_hit;
+					$moved_something = 0;
+					for(0..$p->{auto_entry}-1) {
+						my $clan_id = $auto_teams[$_][4];
+						if ($clans_hit{$clan_id} && @$teams > $prelim_index) {
+							# Swap for next preliminary team, assuming there is one.
+							my $temp = $auto_teams[$_];
+							$auto_teams[$_] = $teams->[$prelim_index];
+							$teams->[$prelim_index++] = $temp;
+							$moved_something = 1;
+						} else {
+							$clans_hit{$clan_id} = 1;
+						}
+					}
+					@auto_teams = sort { $b->[3] <=> $a->[3] } @auto_teams;
+					@$teams = sort { $b->[3] <=> $a->[3] } @$teams;
+				}
+				$p->{double_auto_teams} = join ',', map { $_->[0] } @{$teams}[0..$prelim_index-1];
 
 				# Now, the remainder have to duke it out. We solve this with an all-play-all league.
 				$p->{remain_slots} = $p->{max_teams} - $p->{auto_entry};
