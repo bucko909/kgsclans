@@ -9,207 +9,426 @@ use Carp qw/cluck/;
 $SIG{__WARN__} = sub { cluck $_[0] };
 
 my $c = Clans->new;
-my $sess = $c->getsession;
 
-# Fetch clan period
-my $periodid = $c->param('period');
-my $periodspecified = $periodid ? 1 : 0;
-$periodid ||= $c->getperiod;
-my $periodprep = $periodspecified ? "period=$periodid&amp;" : "";
+$c->header("Clan Brawl");
 
-my $isadmin = 0;
-foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
-	$isadmin = 1 if $groupid == 2;
+my $mode = $c->param('mode') || 'overview';
+my @modes = qw/overview prelim main battle team team_current round round_current/;
+
+$mode = 'overview' unless grep { $_ eq $mode } @modes;
+
+my $period = $c->param('period') || 0;
+$period =~ s/\D//g;
+$period ||= 0;
+if (!$c->period_info($period)) {
+	$period = $c->period_info()->{id};
 }
 
-$c->header("Brawl");
+print $c->h3("Quick Links");
 
-my $gameguessing;
+print qq{<p><a href="brawl.pl?period=$period">Overview</a> | <a href="brawl.pl?period=$period&amp;mode=prelim">Preliminaries</a> | <a href="brawl.pl?period=$period&amp;mode=main">Main</a> | <a href="brawl.pl?period=$period&amp;mode=round">All battles</a> | <a href="brawl.pl?period=$period&amp;mode=round_current">Current round</a></p>};
 
-if ($c->param('mode') && $isadmin) {
-	my $round = $c->param('round');
-	my $position = $c->param('position');
-	my $seat = $c->param('seat');
-	if ($c->param('mode') eq 'url') {
-		$c->db_do("UPDATE brawldraw_results SET url=? WHERE clanperiod=? AND round=? AND position=? AND seat=?", {}, $c->param('url'), $periodid, $round, $position, $seat);
-	} elsif ($c->param('mode') eq 'win') {
-		$c->db_do("UPDATE brawldraw_results SET result=1 WHERE clanperiod=? AND round=? AND position=? AND seat=?", {}, $periodid, $round, $position, $seat);
-		# Has the clan now won?
-		my $wins = $c->db_selectrow("SELECT COUNT(*), MAX(clan_id), MAX(team_id) FROM brawldraw_results INNER JOIN brawldraw ON brawldraw.clanperiod = brawldraw_results.clanperiod AND brawldraw.round = brawldraw_results.round AND brawldraw.position = brawldraw_results.position WHERE brawldraw_results.clanperiod=? AND brawldraw_results.round=? AND brawldraw_results.position=? AND result = 1", {}, $periodid, $round, $position);
-		if ($wins && $wins->[0] == 3) { # == 3 so it only happens once...
-			print "<p>Team won!</p>";
-			&teamwon($periodid, $round, $position, $wins->[2]);
+my $user_clan = $c->db_select("SELECT id, name FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE forumuser_clans.user_id = ?", {}, $c->{userid});
+if (@$user_clan) {
+	my $clan_teams = $c->db_select("SELECT team_id, name FROM brawl_teams WHERE clan_id = ? ORDER BY team_number", {}, $user_clan->[0][0]);
+	if (@$clan_teams) {
+		print "<p>".$c->render_clan(@{$user_clan->[0]}).":</p>";
+		print "<ul>";
+		for(@$clan_teams) {
+			print qq|<li>$_->[1]: <a href="brawl.pl?mode=team&amp;team=$_->[0]">All rounds</a> or <a href="brawl.pl?mode=team_current&amp;team=$_->[0]">current round only</a></li>|;
 		}
-
-		my $position = 2 * int($position / 2) + ($position + 1) % 2;
-		$c->db_do("UPDATE brawldraw_results SET result=0 WHERE clanperiod=? AND round=? AND position=? AND seat=?", {}, $periodid, $round, $position, $seat);
-		# Can't move from undecided->win from losing a game, so no need to
-		# do anything here.
-	} elsif ($c->param('mode') eq 'guess') {
-		$gameguessing = 1;
+		print "</ul>";
 	}
 }
 
-sub teamwon {
-	my ($periodid, $round, $position, $teamid) = @_;
-	my $newpos = int($position/2);
-	my $otherpos = 2 * $newpos + ($position + 1) % 2;
-	$c->db_do("UPDATE brawldraw SET nextround_pos=? WHERE clanperiod=? AND round=? AND position=?", {}, $newpos, $periodid, $round, $position);
-	$c->db_do("UPDATE brawldraw SET nextround_pos=-1 WHERE clanperiod=? AND round=? AND position=?", {}, $periodid, $round, $otherpos);
-	$c->db_do("REPLACE INTO brawldraw SET clanperiod=?, round=?, position=?, team_id=?", {}, $periodid, $round+1, $newpos, $teamid);
-#	$c->db_do("INSERT INTO brawldraw_results SELECT 3, 0, brawldraw.position, brawl.position-1, brawl.member_id, (brawldraw.position + brawl.position) % 2, NULL, NULL FROM brawldraw INNER JOIN brawl ON brawldraw.clan_id = brawl.clan_id INNER JOIN clans ON clans.id = brawl.clan_id WHERE clans.clanperiod = 3 AND brawl.position <= 5;"
-	$c->db_do("REPLACE INTO brawldraw_results SELECT ?, ?, ?, brawl.position-1, brawl.member_id, (? + brawl.position) % 2, NULL, NULL FROM brawl WHERE team_id = ?", {}, $periodid, $round+1, $newpos, $newpos, $teamid);
-}
+if ($mode eq 'overview') {
+	print $c->h3("Main Event");
+	print brawl_main_overview($c, $period);
 
-my $brawldraw = $c->db_select("SELECT round, position, brawl_teams.team_id, brawl_teams.name, clans.id, clans.name, nextround_pos FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE brawldraw.clanperiod = ?", {}, $periodid);
-if (@$brawldraw) {
-	print $c->h3("Results");
-
-	# First, we need the results.
-	my $brawldraw_results = $c->db_select("SELECT round, position, seat, member_id, members.name, members.rank, is_black, result, url FROM brawldraw_results INNER JOIN members ON member_id = members.id WHERE clanperiod = ?", {}, $periodid);
-
-	# Let's process the results into a sensible 3-dim array.
-	my @results;
-	foreach(@$brawldraw_results) {
-		$results[$_->[0]] ||= [];
-		$results[$_->[0]][$_->[1]] ||= [];
-		$results[$_->[0]][$_->[1]][$_->[2]] = $_;
+	print $c->h3("Preliminaries");
+	print brawl_prelim_overview($c, $period);
+} elsif ($mode eq 'prelim') {
+	my $position = $c->param('position');
+	if (defined $position) {
+		$position =~ s/\D//g;
+		$position ||= 0;
+		print brawl_prelim($c, $period, $position);
+	} else {
+		print $c->h3("Preliminaries");
+		print brawl_prelim_overview($c, $period);
 	}
-
-	# And similar for the draw
-	my @draw;
-	foreach(@$brawldraw) {
-		$draw[$_->[0]] ||= [];
-		$draw[$_->[0]][$_->[1]] = $_;
+} elsif ($mode eq 'main') {
+	print $c->h3("Main Event");
+	print brawl_main_overview($c, $period);
+} elsif ($mode eq 'battle') {
+	my $round = $c->param('round') || 0;
+	my $gameno = $c->param('game') || 0;
+	$round =~ s/\D//g;
+	$round ||= 0;
+	$gameno =~ s/\D//g;
+	$gameno ||= 0;
+	if ($round) {
+		print $c->h3("Battle for round $round, game number ".($gameno+1));
+	} else {
+		print $c->h3("Preliminary battle, game number ".($gameno+1));
 	}
-
-	foreach my $round (0..$#draw) {
-		print $c->h4("Round ".($round + 1));
-		my @rounddraw = @{$draw[$round]};
-		my @roundresults = @{$results[$round] || []};
-		foreach my $position (0..$#rounddraw) {
-			my $clan = $c->renderclan($rounddraw[$position][4], $rounddraw[$position][5]);
-			my $team = $clan.($rounddraw[$position][3] ? " ($rounddraw[$position][3])" : "");
-			if ($position % 2 == 1 && (!$rounddraw[$position][2] || !$rounddraw[$position-1][2])) {
-				next;
-			} elsif ($position % 2 == 0 && !$rounddraw[$position][2]) {
-				if (!$rounddraw[$position+1][2]) {
-					# WTF?!
-					next;
-				}
-				my $clan = $c->renderclan($rounddraw[$position+1][4], $rounddraw[$position+1][5]);
-				my $team = $clan.($rounddraw[$position+1][3] ? "($rounddraw[$position+1][3])" : "");
-				print $c->p("Team $team has no opponent.");
-				next;
-			} elsif ($position % 2 == 0 && !$rounddraw[$position+1][2]) {
-				print $c->p("Team $team has no opponent.");
-				next;
-			}
-			my $class = defined $rounddraw[$position][6] ? "clan_".($rounddraw[$position][6] > -1 ? "won" : "lost") : "unplayed";
-			if ($position % 2 == 0) {
-				print "<table class=\"brawldraw\">";
-				print "<tr><td colspan=\"5\" class=\"$class\">$team</td></tr>";
-			}
-			my $rowclass = $position % 2 ? "players_bottom" : "players_top";
-			print "<tr class=\"$rowclass\">";
-			my @games = @{$roundresults[$position]};
-			foreach my $seat (0..4) {
-				my $class = ($games[$seat][6] ? "player_black" : "player_white")." ".(defined $games[$seat][7] ? ($games[$seat][7] ? "player_won" : "player_lost") : "player_unplayed");
-				print "<td class=\"$class\">";
-				print $c->rendermember($games[$seat][3], $games[$seat][4], $games[$seat][5]);
-				print qq| [<a href="?$periodprep|.qq|mode=win&amp;round=$round&amp;position=$position&amp;seat=$seat&amp;">win</a>]| if $isadmin and !defined $games[$seat][7];
-				print "</td>";
-			}
-			print "</tr>";
-			if ($position % 2) {
-				print "<tr><td colspan=\"5\" class=\"$class\">$team</td></tr>";
-				print "</table><br/><br/>";
-			} else {
-				# Games, too!
-				print "<tr class=\"games\">";
-				foreach my $seat (0..4) {
-					print "<td>";
-					if ($games[$seat][8]) {
-						if ($games[$seat][8] =~ /^http/) {
-							print "(<a href=\"".$c->escapeHTML($games[$seat][8])."\">Game</a>)";
-						} else {
-							print "(Default)";
-						}
+	print brawl_battle($c, $period, $round, $gameno);
+} elsif ($mode eq 'team' || $mode eq 'team_current') {
+	my $team = $c->param('team') || 0;
+	$team =~ s/\D//g;
+	$team ||= 0;
+	my $team_name = $c->db_selectone("SELECT name FROM brawl_teams WHERE team_id = ? ORDER BY team_number", {}, $team);
+	if (!$team_name) {
+		print "Error: Team does not exist.";
+	} else {
+		print $c->h3("Brawl battles for team ".$c->escapeHTML($team_name));
+		my $round_data;
+		if ($mode eq 'team') {
+			$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw WHERE team_id = ? ORDER BY round, position", {}, $team);
+		} else {
+			my $round = $c->db_selectone("SELECT MAX(round) FROM brawldraw_results WHERE clanperiod = ?", {}, $period) || 0;
+			$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw WHERE team_id = ? AND round = ? ORDER BY position", {}, $team, $round);
+		}
+		if (@$round_data) {
+			my $round = -1;
+			my $game_count = 0;
+			for(@$round_data) {
+				if ($_->[0] != $round) {
+					$round = $_->[0];
+					if ($round == 0) {
+						print $c->h4("Preliminary round");
 					} else {
-						if ($isadmin) {
-							my $url = "";
-							if ($gameguessing) {
-								my $i = -1;
-								my @timevals = gmtime();
-								#3, 4, 5 = d/m/y
-								my $year = $timevals[5] + 1900;
-								my $month = $timevals[4] + 1;
-								my $day = $timevals[3];
-								my $index = 1;
-								my $basepos = 2*int($position/2);
-								my $wadd = ($seat+1) % 2;
-								my $badd = $seat % 2;
-								my $black = $roundresults[$basepos+$badd][$seat][4];
-								my $white = $roundresults[$basepos+$wadd][$seat][4];
-								while(1) {
-									my $turl;
-									if ($index == 1) {
-										$turl = "http://files.gokgs.com/games/$year/$month/$day/$white-$black.sgf";
-									} else {
-										$turl = "http://files.gokgs.com/games/$year/$month/$day/$white-$black-$index.sgf";
-									}
-									last unless head($turl);
-									$index = $index + 1;
-									$url = $turl;
-								}
-								undef $url unless $index > 1;
-							}
-							print qq|<form method="post" action="brawl.pl">|;
-							print qq|<input type="text" name="url" value="$url"/>|;
-							print qq|<input type="hidden" name="mode" value="url"/>|;
-							print qq|<input type="hidden" name="period" value="$periodid"/>| if $periodspecified;
-							print qq|<input type="hidden" name="round" value="$round"/>|;
-							print qq|<input type="hidden" name="position" value="$position"/>|;
-							print qq|<input type="hidden" name="seat" value="$seat"/>|;
-							print qq|<input type="submit" name="submit" value="OK"/>|;
-							print qq|</form>|;
-						}
+						print $c->h4("Round $round");
 					}
-					print "</td>";
 				}
-				print "</tr>";
+				if ($round == 0) {
+					print "<h5>Game ".(++$game_count)."</h5>";
+				}
+				print brawl_battle($c, $period, $round, $_->[1]);
 			}
+		} else {
+			print "No draw exists for this team."
 		}
 	}
 } else {
-	print $c->h3("Teams");
-	my $info = $c->db_select("SELECT clans.id AS id, clans.name AS name, GROUP_CONCAT(CONCAT(position,',',mb.id,',',mb.name,',',IF(mb.rank IS NULL,'',mb.rank),',',mb.played) ORDER BY brawl.position ASC SEPARATOR ';') FROM brawl_teams INNER JOIN brawl ON brawl.team_id = brawl_teams.team_id INNER JOIN clans ON clans.id = brawl_teams.clan_id LEFT OUTER JOIN members mb ON mb.id = brawl.member_id WHERE clanperiod = ? AND got100time IS NOT NULL AND ((position > 0 AND position < 6) OR position IS NULL) GROUP BY brawl_teams.team_id ORDER BY clans.got100time", {}, $periodid);
-	print "<table class=\"brawl\">";
-	print "<tr><th>Clan</th><th colspan=5>Team</th></tr>";
-	my @limit = (1..@$info);
-	my $displaybw;
-	my $currentb = 1;
-	if ($c->param('clans')) {
-		@limit = split /,/, $c->param('clans');
-		$displaybw = 1;
+	my $round;
+	if ($mode eq 'round') {
+		$round = $c->param('round') || -1;
+		$round =~ s/[^-\d]//g;
+		$round ||= 0;
+	} else {
+		$round = $c->db_selectone("SELECT MAX(round) FROM brawldraw_results WHERE clanperiod = ?", {}, $period) || 0;
 	}
-	my $count = 0;
-	foreach (@limit) {
-		my $clan = $info->[$_-1];
-		$count++;
-		my @team = (("") x 5);
-		foreach(split /;/, ($clan->[2] || "")) {
-			my @a = split /,/, ($_ || "1");
-			$team[$a[0] - 1] = $a[1] ? $c->rendermember(@a[1,2,3])." ($a[4])" : "";
-		}
-		foreach(0..4) {
-			$team[$_] .= ($displaybw ? $currentb ? " [black]" : " [white]" : "");
-			$currentb = !$currentb;
-		}
-		my $team = join '', map { "<td>$_</td>" } @team;
-		print "<tr><td>".$c->renderclan(@{$clan}[0,1])."</a></td>$team</tr>";
-		print "<tr><td colspan=6></td></tr>" if $currentb && $_ != $limit[$#limit] && $displaybw;
+	my $round_data;
+	if ($round == -1) {
+		$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw ORDER BY round, position");
+		print $c->h3("Brawl draw data for all rounds");
+	} else {
+		$round_data = $c->db_select("SELECT round, FLOOR(position/2) FROM brawldraw WHERE round = ? ORDER BY round, position", {}, $round);
+		print $c->h3("Brawl draw data round $round");
 	}
-	print "</table>";
+	if (@$round_data) {
+		my $round = -1;
+		my $game_count;
+		for(@$round_data) {
+			if ($_->[0] != $round) {
+				$round = $_->[0];
+				$game_count = 0;
+				if ($round == 0) {
+					print $c->h4("Preliminary round");
+				} else {
+					print $c->h4("Round $round");
+				}
+			}
+			print "<h5>Game ".(++$game_count)."</h5>";
+			print brawl_battle($c, $period, $round, $_->[1]);
+		}
+	} else {
+		print "No draw exists for this team.";
+	}
 }
+
 $c->footer;
+
+sub brawl_prelim_overview {
+	return brawl_prelim(@_);
+}
+
+sub brawl_prelim {
+	my ($c, $period, $position) = @_;
+
+	my $draw_data;
+	if (defined $position) {
+		$draw_data = $c->db_select("SELECT nextround_pos, position, brawl_teams.team_id, brawl_teams.name, clans.id, clans.tag, result FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE round = 0 AND brawldraw.clanperiod = ? AND nextround_pos = ? ORDER BY position", {}, $period, $position);
+	} else {
+		$draw_data = $c->db_select("SELECT nextround_pos, position, brawl_teams.team_id, brawl_teams.name, clans.id, clans.tag, result FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE round = 0 AND brawldraw.clanperiod = ? ORDER BY position", {}, $period);
+	}
+
+	if (!@$draw_data) {
+		return "No preliminary round data is available";
+	}
+	
+	my %groups;
+	my %teams;
+	my $last_val;
+	my %order;
+	my $order_val = 0;
+	for(@$draw_data) {
+		$groups{$_->[0]} ||= {};
+		$groups{$_->[0]}{$_->[2]} ||= {};
+		$teams{$_->[2]} ||= $_;
+		$order{$_->[2]} = $order_val++ if !exists $order{$_->[2]};
+		if ($_->[1] % 2 == 0) {
+			# Even position means the team is the first in its match.
+			$last_val = $_;
+		} else {
+			# Odd position means it is the opponent of $last_val.
+			$groups{$_->[0]}{$last_val->[2]}{$_->[2]} = $last_val;
+			$groups{$_->[0]}{$_->[2]}{$last_val->[2]} = $_;
+			undef $last_val;
+		}
+	}
+
+	my $output = '';
+	for my $target_pos (sort keys %groups) {
+		my $level = defined $position ? 3 : 4;
+		$output .= "<h$level>Fighting for position ".($target_pos+1)."</h$level>";
+		$output .= "<p>A square is a + if the left team beat the top team.</p>";
+		my %group = %{$groups{$target_pos}};
+		my @teams = sort { $order{$a} <=> $order{$b} } keys %group;
+		$output .= "<table>";
+		$output .= "<tr><td></td>";
+		for my $team_id (@teams) {
+			$output .= "<th>$teams{$team_id}[3]<br/>(".$c->render_clan($teams{$team_id}[4], $teams{$team_id}[5]).")</th>";
+		}
+		$output .= "</tr>";
+		for my $team_id (@teams) {
+			$output .= "<tr>";
+			$output .= "<th>$teams{$team_id}[3] (".$c->render_clan($teams{$team_id}[4], $teams{$team_id}[5]).")</th>";
+			for my $opp_id (@teams) {
+				my $info = $group{$team_id}{$opp_id};
+				my $win = $info->[6];
+				my $class;
+				my $val;
+				my $link;
+				if ($win) {
+					if ($win == 1) {
+						$class = qq| class="clan_won"|;
+						$val = "+";
+					} else {
+						$class = qq| class="clan_lost"|;
+						$val = "-";
+					}
+				} elsif ($team_id == $opp_id) {
+					$class = "";
+					$val = "";
+				} else {
+					$class = qq| class="clan_unplayed"|;
+					$val = "?";
+				}
+				if ($class) {
+					my $gameno = int($info->[1]/2);
+					$link = "brawl.pl?period=$period&amp;mode=battle&amp;round=0&amp;game=$gameno";
+				}
+				$output .= qq|<td style="text-align:center;"$class>|;
+				$output .= qq|<a href="$link">| if $link;
+				$output .= $val;
+				$output .= qq|</a>| if $link;
+				$output .= qq|</td>|;
+			}
+			$output .= "</tr>";
+		}
+		$output .= "</table>";
+	}
+	return $output;
+}
+
+sub brawl_main_overview {
+	my ($c, $period) = @_;
+
+	my $prelim_rounds = $c->db_select("SELECT DISTINCT(nextround_pos) FROM brawldraw WHERE round=0 AND clanperiod=?", {}, $period);
+	my %has_prelim;
+	$has_prelim{$_->[0]} = 1 for (@$prelim_rounds);
+
+	# Generate brawl league table
+	my $draw_data = $c->db_select("SELECT round, position, brawl_teams.team_id, brawl_teams.name, clans.id, clans.tag, result FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE round >= 1 AND brawldraw.clanperiod = ?", {}, $period);
+
+	if (!@$draw_data) {
+		return "No main round data is available";
+	}
+	
+	my @draw;
+	for (@$draw_data) {
+		$draw[$_->[0]-1] ||= [];
+		$draw[$_->[0]-1][$_->[1]] = $_;
+	}
+
+	my $output = qq|<p>Click on the &quot;vs.&quot; to get the draw for that battle.</p><table border=1>|;
+	$output .= "<tr>";
+	for my $round (1..@draw) {
+		$output .= "<th>Round $round</th>";
+	}
+	$output .= "</tr>";
+	for my $position (0..2*@{$draw[0]}-2) {
+		$output .= "<tr>";
+		for my $round (0..$#draw) {
+			my $block_size = 2 ** ($round+1)-1;
+			my $test_size = $block_size+1;
+			if ($position % $test_size == 0) {
+				# Show a team
+				my $index = int($position/$test_size);
+				my $info = $draw[$round][$index];
+				my $rowspan = $block_size > 1 ? qq| rowspan="$block_size"| : "";
+				my ($class, $content);
+				if ($info) {
+					if (defined $info->[6]) {
+						if ($info->[6] == 1) {
+							$class = qq| class="clan_won"|;
+						} elsif ($info->[6] == -1) {
+							$class = qq| class="clan_lost"|;
+						} else {
+							$class = qq| class="clan_unplayed"|;
+						}
+					} elsif ($round = $#draw && @{$draw[$#draw]} == 1) {
+						$class = qq| class="clan_won"|;
+					} else {
+						$class = qq| class="clan_unplayed"|;
+					}
+					$content = $info->[3]." (".$c->render_clan($info->[4], $info->[5]).")";
+				} else {
+					$class = qq| class="clan_unplayed"|;
+					$content = "?";
+				}
+				if ($round == 0 && $has_prelim{$index}) {
+					$content = qq|(<a href="brawl.pl?period=$period&amp;mode=prelim&amp;position=$index">prelim</a>) $content|;
+				}
+				$output .= qq|<td$rowspan$class>|;
+				$output .= $content;
+				$output .= qq|</td>|;
+			} elsif (($position + 1) % ($test_size * 2) == $test_size) {
+				# Show a vs
+				my $gameno = int($position/2/$test_size);
+				$output .= qq|<td style="text-align:center;"><a href="brawl.pl?period=$period&amp;mode=battle&amp;round=@{[$round+1]}&amp;game=$gameno">vs.</a></td>|;
+			} elsif (($position + 1) % ($test_size * 2) == 0) {
+				# Show a blank
+				$output .= qq|<td></td>|;
+			} else {
+				# We're inside another already output cell, so skip.
+			}
+		}
+		$output .= "</tr>";
+	}
+	$output .= "</table>";
+	return $output;
+}
+
+sub brawl_battle {
+	my ($c, $period, $round, $gameno) = @_;
+	my @positions = ($gameno * 2, $gameno * 2 + 1);
+
+	my $teamdata = $c->db_select("SELECT position, brawl_teams.team_id, brawl_teams.name, clans.id, clans.name, result FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE brawldraw.clanperiod = ? AND round = ? AND position >= ? AND position <= ?", {}, $period, $round, @positions);
+
+	if (@$teamdata == 0) {
+		return "There is no draw for this battle.";
+	} elsif (@$teamdata == 1) {
+		return "Team ".$c->escapeHTML($teamdata->[0][2])." (".$c->render_clan($teamdata->[0][3], $teamdata->[0][4]).") has no opponent.";
+	}
+
+	if ($positions[0] == $teamdata->[1][0]) {
+		@$teamdata = reverse @$teamdata;
+	}
+
+	my $memberdata = $c->db_select("SELECT position, seat, members.id, members.name, members.rank, is_black, result, url FROM brawldraw_results INNER JOIN members ON brawldraw_results.member_id = members.id WHERE brawldraw_results.clanperiod = ? AND round = ? AND position >= ? AND position <= ?", {}, $period, $round, @positions);
+	my (@top, @bottom, @urls);
+
+	for (@$memberdata) {
+		if ($_->[0] == $positions[0]) {
+			$top[$_->[1]-1] = $_;
+		} else {
+			$bottom[$_->[1]-1] = $_;
+		}
+		$urls[$_->[1]-1] = $_->[7];
+	}
+
+	# If we get here we know it's a fight between two teams.
+	my $output = qq|<table class="brawldraw">|;
+	$output .= qq|<tr>|;
+	{
+		my $class;
+		if ($teamdata->[0][5]) {
+			if ($teamdata->[0][5] == 1) {
+				$class = "clan_won";
+			} else {
+				$class = "clan_lost";
+			}
+		} else {
+			$class = "clan_unplayed";
+		}
+		$output .= qq|<td class="$class" colspan="5">|.$c->escapeHTML($teamdata->[0][2])." (".$c->render_clan($teamdata->[0][3], $teamdata->[0][4]).qq|)</td>|;
+	}
+	$output .= qq|</tr><tr>|;
+	for my $member (@top) {
+		my $class;
+		if ($_->[5]) {
+			$class = "player_black";
+		} else {
+			$class = "player_white";
+		}
+		if ($_->[6]) {
+			if ($_->[6] == 1) {
+				$class .= " player_won";
+			} else {
+				$class .= " player_lost";
+			}
+		} else {
+			$class .= " player_unplayed";
+		}
+		$output .= qq|<td class="$class">|.$c->render_member($member->[2], $member->[3], $member->[4]).qq|</td>|;
+	}
+	$output .= qq|</tr><tr>|;
+	for my $url (@urls) {
+		if ($url) {
+			if ($url =~ /^http/) {
+				$output .= qq|<td><a href="|.$c->escapeHTML($url).qq|">Game</a></td>|;
+			} else {
+				$output .= qq|<td>(Default)</td>|;
+			}
+		} else {
+			$output .= qq|<td>(No data)</td>|;
+		}
+	}
+	$output .= qq|</tr><tr>|;
+	for my $member (@bottom) {
+		my $class;
+		if ($_->[5]) {
+			$class = "player_black";
+		} else {
+			$class = "player_white";
+		}
+		if ($_->[6]) {
+			if ($_->[6] == 1) {
+				$class .= " player_won";
+			} else {
+				$class .= " player_lost";
+			}
+		} else {
+			$class .= " player_unplayed";
+		}
+		$output .= qq|<td class="$class">|.$c->render_member($member->[2], $member->[3], $member->[4]).qq|</td>|;
+	}
+	$output .= qq|</tr><tr>|;
+	{
+		my $class;
+		if ($teamdata->[1][5]) {
+			if ($teamdata->[1][5] == 1) {
+				$class = "clan_won";
+			} else {
+				$class = "clan_lost";
+			}
+		} else {
+			$class = "clan_unplayed";
+		}
+		$output .= qq|<td class="$class" colspan="5">|.$c->escapeHTML($teamdata->[1][2])." (".$c->render_clan($teamdata->[1][3], $teamdata->[1][4]).qq|)</td>|;
+	}
+	$output .= "</tr></table>";
+}
