@@ -1068,7 +1068,7 @@ change_brawl_pos => {
 			# That's it in this case.
 			return (1, "Member will no longer be playing in the next round.");
 		}
-		if (!$c->db_do('INSERT INTO brawl SET team_id=?, member_id=?, position=?', {}, $p->{team_id}, $p->{member_id}, $p->{pos_id})) {
+		if (!$c->db_do('INSERT INTO brawl SET team_id=?, member_id=?, position=?', {}, $p->{team_id}, $p->{member_id}, $p->{pos_id}-1)) {
 			return (0, "Database error.");
 		} else {
 			return (1, "Changed clan brawl position.");

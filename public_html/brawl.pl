@@ -334,7 +334,7 @@ sub brawl_battle {
 		@$teamdata = reverse @$teamdata;
 	}
 
-	my $memberdata = $c->db_select("SELECT position, seat, members.id, members.name, members.rank, is_black, result, url FROM brawldraw_results INNER JOIN members ON brawldraw_results.member_id = members.id WHERE brawldraw_results.clanperiod = ? AND round = ? AND position >= ? AND position <= ?", {}, $period, $round, @positions);
+	my $memberdata = $c->db_select("SELECT position, seat, members.id, members.name, members.rank, is_black, result, url FROM brawldraw_results INNER JOIN members ON brawldraw_results.member_id = members.id WHERE brawldraw_results.clanperiod = ? AND round = ? AND position >= ? AND position <= ? AND seat >= 0 AND seat <= 4", {}, $period, $round, @positions);
 	my (@top, @bottom, @urls);
 
 	for (@$memberdata) {
