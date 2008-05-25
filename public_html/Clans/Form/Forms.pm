@@ -65,7 +65,7 @@ brawl_draw => {
 					# Simple check: The number of wins in the group should be equal to the number of games, which is in turn equal to 1 + 2 + ... + n-1 where n is the number of teams.
 					# This is of course equal to n(n-1)/2.
 					if ($position->[2] != $position->[1] * ($position->[1] - 1) / 2) {
-						return (0, "It appears that the preliminary round is not yet complete ($position->[2] results for $position->[1] teams).");
+						return (0, "It appears that the preliminary round is not yet complete ($position->[2] results for $position->[1] teams fighting over round $position->[0]).");
 					}
 				}
 				for my $position (@$fighting_over) {
