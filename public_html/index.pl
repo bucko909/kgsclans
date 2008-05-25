@@ -674,21 +674,46 @@ sub clan_brawllist {
 			return "Clan ID \"$clanid\" is invalid";
 		}
 	}
-	my $teams = $c->db_select("SELECT team_id, name FROM brawl_teams WHERE clan_id = ?", {}, $clanid);
+	my $teams = $c->db_select("SELECT brawl_teams.team_id, name, team_number, COUNT(member_id) FROM brawl_teams INNER JOIN brawl ON brawl_teams.team_id = brawl.team_id WHERE position >0 AND position < 6 AND clan_id = ? GROUP BY brawl_teams.team_id ORDER BY team_number", {}, $clanid);
 	if (!$teams || !@$teams) {
 		return "<h3>Brawl Teams</h3><p>No brawl teams created!</p>";
 	}
 	my $out = '<h3>Brawl Teams</h3>';
 	for(@$teams) {
-		$out .= "<h4>";
+		$out .= "<h4>Team $_->[2]: ";
 		$out .= $_->[1] ? $_->[1] : "Main";
+		if ($_->[3] == 5) {
+			$out .= " (ready for brawl)";
+		} else {
+			$out .= " (some brawl positions unallocated)";
+		}
 		$out .= "</h4>";
-		$out .= clan_brawl_memberlist($c, $_->[0]);
+		if ($c->is_clan_member($clanid)) {
+			$out .= clan_brawl_memberlist($c, $_->[0]);
+		} else {
+			$out .= clan_brawl_public_memberlist($c, $_->[0]);
+		}
 	}
 	return $out;
 }
 
 sub clan_brawl_memberlist {
+	my ($c, $teamid) = @_;
+	if (!$teamid) {
+		return "Team ID \"$teamid\" is invalid";
+	}
+	my $results = $c->db_select("SELECT brawl.position, members.id, members.name, members.rank FROM brawl INNER JOIN members ON members.id = brawl.member_id WHERE brawl.team_id = ? ORDER BY brawl.position", {}, $teamid);
+	my @brawl;
+	return "Team has no members." if !$results;
+	my $result = "<ul>";
+	for(@$results) {
+		$result .= "<li>$_->[0]: ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";
+	}
+	$result .= "</ul>";
+	return $result;
+}
+
+sub clan_brawl_public_memberlist {
 	my ($c, $teamid) = @_;
 	if (!$teamid) {
 		return "Team ID \"$teamid\" is invalid";

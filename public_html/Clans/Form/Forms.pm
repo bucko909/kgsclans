@@ -110,17 +110,13 @@ brawl_draw => {
 			# Get a list of teams.
 			my $teams = $c->db_select("SELECT brawl_teams.team_id, team_number, clans.points, COUNT(member_id) AS number, clans.id FROM brawl_team_members INNER JOIN brawl_teams ON brawl_team_members.team_id = brawl_teams.team_id INNER JOIN clans ON clans.id = brawl_teams.clan_id WHERE clans.clanperiod = ? GROUP BY brawl_teams.team_id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
 
-			use Data::Dumper;
-			print Dumper($teams);
-			print Dumper(\%team_members);
-
 			# Remove all teams which do not have 5 members.
 			$teams = [ grep { $team_members{$_->[0]} && $team_members{$_->[0]}[5] == 5 } @$teams ];
-			print Dumper($teams);
 
 			$p->{current_champion} = $c->get_option('BRAWLCHAMPION');
 
 			# For both below cases, we need to know the seed score for each team.
+			# TODO does not take into account the "one team per clan" rule.
 			for(0..$#$teams) {
 				$teams->[$_][3] = $teams->[$_][2] / $points[$teams->[$_][1]];
 				# The winner of the last brawl is always seeded top.
@@ -152,20 +148,13 @@ brawl_draw => {
 				$p->{auto_entry} = $c->get_option('BRAWLAUTOENTRY');
 				my @auto_teams = splice(@$teams, 0, $p->{auto_entry});
 
-				# Now, the remainder have to duke it out. Currently this is done with 4 special cases,
-				# depending on the number of players competing for a spot.
-
+				# Now, the remainder have to duke it out. We solve this with an all-play-all league.
 				$p->{remain_slots} = $p->{max_teams} - $p->{auto_entry};
 				$p->{min_opponents} = int(@$teams/$p->{remain_slots}) - 1; # >= 1 by if condition
 				$p->{teams_on_min} = $p->{remain_slots} - (@$teams % $p->{remain_slots});
 
-				if (($p->{min_opponents} == 3 && $p->{teams_on_min} != @$teams) || $p->{min_opponents} > 3) {
-					# At least one clan is going to have 4 opponents. We don't support that!
-					return (0, "At least one clan will have 4 or more opponents for a brawl slot. A fair solution to this is not known.");
-				}
-
 				if ($p->{min_opponents} == 0) {
-					# In this case, at least one team gets in free. Bung 'em all on auto_teams for now.
+					# In this case, at least one team gets in free. Bung 'em all on auto_teams.
 					push @auto_teams, splice(@$teams, 0, $p->{teams_on_min});
 					$p->{remain_slots} -= $p->{teams_on_min};
 					$p->{teams_on_min} = 0;
@@ -223,7 +212,6 @@ brawl_draw => {
 		for my $team (@$teams_to_insert) {
 			$insert_members->($p->{this_round}, $team->[1], $team);
 		}
-		print Dumper($p);
 		return (1, "Draw successfully produced!");
 	},
 },
@@ -358,9 +346,9 @@ add_clan => {
 		return (1, "Clan and forum added.");
 	}
 },
-new_page => {
+add_page => {
 	# Edit page. Invoked only from custom forms.
-	brief => 'New page',
+	brief => 'Add page',
 	level => 'admin',
 	category => [ qw/page admin/ ], # TODO not finished types for params
 	params => [
@@ -391,9 +379,9 @@ new_page => {
 		return (1, "Page created.");
 	}
 },
-edit_page => {
+change_page => {
 	# Edit page. Invoked only from custom forms.
-	brief => 'Edit page',
+	brief => 'Change page',
 	level => 'admin',
 	category => [ qw/page admin/ ], # TODO not finished types for params
 	params => [
@@ -430,9 +418,9 @@ edit_page => {
 		return (1, "Text updated.");
 	}
 },
-set_clan_name => {
+change_clan_name => {
 	# Alter clan's name.
-	brief => 'Rename clan',
+	brief => 'Change clan name',
 	level => 'clan_leader($clan_id)',
 	category => [ qw/clan admin/ ],
 	description => 'Alter the clan\'s name. Please keep the name sensible, with no profanity etc.',
@@ -444,8 +432,9 @@ set_clan_name => {
 			type => 'id_clan($period_id)',
 		},
 		oldname => {
-			type => 'valid|name_clan($period_id, $clan_id)',
-			hidden => [ qw/clan admin/ ],
+			type => 'name_clan($period_id, $clan_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		newname => {
 			type => 'valid_new|name_clan($period_id, $clan_id)',
@@ -463,9 +452,9 @@ set_clan_name => {
 		}
 	},
 },
-set_clan_tag => {
+change_clan_tag => {
 	# Set clan's tag.
-	brief => 'Change clan\'s tag',
+	brief => 'Change clan tag',
 	level => 'clan_leader($clan_id)',
 	category => [ qw/clan admin/ ],
 	description => 'Alter the clan\'s tag. Please keep the tag free of profanity etc.',
@@ -479,7 +468,7 @@ set_clan_tag => {
 		oldtag => {
 			type => 'valid|tag_clan($period_id, $clan_id)',
 			brief => 'Old tag',
-			readonly => [ qw/clan admin/ ],
+			informational => 1,
 		},
 		newtag => {
 			type => 'valid_new|tag_clan($period_id, $clan_id)',
@@ -496,9 +485,9 @@ set_clan_tag => {
 		}
 	},
 },
-set_clan_url => {
+change_clan_url => {
 	# Set clan's URL
-	brief => 'Set clan\'s website address',
+	brief => 'Change clan website address',
 	level => 'clan_moderator($clan_id)',
 	category => [ qw/clan admin/ ],
 	description => 'With this form you may give a website address people can visit for more information on your clan.',
@@ -512,7 +501,7 @@ set_clan_url => {
 		oldurl => {
 			type => 'valid|null_valid|url_clan($period_id,$clan_id)',
 			brief => 'Old URL',
-			readonly => [ qw/clan admin/ ],
+			informational => 1,
 		},
 		newurl => {
 			type => 'null_valid|url_clan($period_id,$clan_id)',
@@ -529,7 +518,7 @@ set_clan_url => {
 		}
 	},
 },
-set_clan_info => {
+change_clan_info => {
 	# Set info field
 	brief => 'Change clan description',
 	level => 'clan_moderator($clan_id)',
@@ -545,7 +534,7 @@ set_clan_info => {
 		oldinfo => {
 			type => 'valid|null_valid|info_clan($period_id,$clan_id)',
 			brief => 'Old description',
-			readonly => [ qw/clan admin/ ],
+			informational => 1,
 		},
 		newinfo => {
 			type => 'null_valid|info_clan($period_id,$clan_id)',
@@ -562,8 +551,8 @@ set_clan_info => {
 		}
 	},
 },
-set_clan_leader => {
-	brief => 'Set displayed clan leader',
+change_clan_leader => {
+	brief => 'Change displayed clan leader',
 	level => 'clan_leader($clan_id)',
 	category => [ qw/clan admin/ ],
 	description => 'This changes the member who will be listed as the leader when people look at the summary page etc. It does not grant the member any permissions (you should do this by fiddling with forum groups).',
@@ -707,12 +696,18 @@ remove_clan_member => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
-		name => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member clan admin/ ],
+		member_name => {
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {
@@ -752,16 +747,69 @@ add_clan_brawl_team => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		# TODO check qualification status
-		if ($c->db_do('INSERT INTO brawl_teams SET name=?, clan_id=?', {}, $p->{team_name}, $p->{clan_id})) {
+		$p->{existing_teams} = $c->db_selectone("SELECT COUNT(*) FROM brawl_teams WHERE clan_id = ?", {}, $p->{clan_id});
+		my @requirements = split /,/, $c->get_option('BRAWLTEAMPOINTS');
+		$p->{points_required} = $requirements[$p->{existing_teams}];
+		$p->{points_accrued} = $c->db_selectone("SELECT points FROM clans WHERE id = ?", {}, $p->{clan_id});
+		if ($p->{points_accrued} < $p->{points_required}) {
+			return (0, "Not enough points to add this team ($p->{points_accrued} < $p->{points_required}).");
+		}
+		if ($c->db_do('INSERT INTO brawl_teams SET name=?, clan_id=?, team_number=?', {}, $p->{team_name}, $p->{clan_id}, $p->{existing_teams}+1)) {
 			return (1, "Added new brawl team.");
 		} else {
 			return (0, "Database error.");
 		}
 	},
 },
-set_clan_brawl_team_name => {
-	brief => 'Set brawl team name',
+change_clan_brawl_team_order => {
+	brief => 'Change order of brawl team',
+	level => 'clan_moderator($clan_id)',
+	category => [ qw/brawl clan admin/ ],
+	description => 'You can use this form to reorder your teams (for example, to change which gets automatically entered into the brawl). Moving a team up gives it higher priority.',
+	params => [
+		period_id => {
+			type => 'id_clanperiod',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		team_id => {
+			type => 'id_brawlteam($period_id,$clan_id)',
+		},
+		team_name => {
+			type => 'name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		updown => {
+			type => 'enum(Up,Down)',
+			brief => 'Direction to move',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		$p->{old_number} = $c->db_selectone("SELECT team_number FROM brawl_teams WHERE team_id = ?", {}, $p->{team_id});
+		$p->{new_number} = $p->{old_number} + ($p->{updown} eq 'Down' ? 1 : -1);
+		$p->{total_teams} = $c->db_selectone("SELECT COUNT(*) FROM brawl_teams WHERE clan_id = ?", {}, $p->{clan_id});
+		if ($p->{new_number} > $p->{total_teams}) {
+			return (0, "Cannot move a team below the bottom.");
+		}
+		if ($p->{new_number} < 1) {
+			return (0, "Cannot move a team above the top.");
+		}
+		$c->db_do("UPDATE brawl_teams SET team_number = ? WHERE team_number = ? AND clan_id = ?", {}, 100, $p->{old_number}, $p->{clan_id});
+		$c->db_do("UPDATE brawl_teams SET team_number = ? WHERE team_number = ? AND clan_id = ?", {}, $p->{old_number}, $p->{new_number}, $p->{clan_id});
+		$c->db_do("UPDATE brawl_teams SET team_number = ? WHERE team_number = ? AND clan_id = ?", {}, $p->{new_number}, 100, $p->{clan_id});
+		return (1, "Altered order of brawl teams.");
+	},
+},
+change_clan_brawl_team_name => {
+	brief => 'Change brawl team name',
 	level => 'clan_moderator($clan_id)',
 	category => [ qw/brawl clan admin/ ],
 	description => 'You can use this form to rename your brawl team.',
@@ -772,12 +820,18 @@ set_clan_brawl_team_name => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
 		oldname => {
-			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
-			hidden => [ qw/brawl clan admin/ ],
+			type => 'name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		newname => {
 			type => 'valid_new|name_brawlteam($period_id,$clan_id,$team_id)',
@@ -806,12 +860,18 @@ remove_clan_brawl_team => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
-		name => {
-			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
-			hidden => [ qw/brawl clan admin/ ],
+		team_name => {
+			type => 'name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {
@@ -829,7 +889,7 @@ remove_clan_brawl_team => {
 remove_member_from_brawl => {
 	brief => 'Remove member from brawl team',
 	level => 'clan_moderator($clan_id)',
-	category => [ qw/member brawl clan admin/ ],
+	category => [ qw/brawl member clan admin/ ],
 	description => 'Here you can remove members from brawl teams. If you select "None", all members will be removed.',
 	params => [
 		period_id => {
@@ -838,19 +898,26 @@ remove_member_from_brawl => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
 		team_name => {
-			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
-			hidden => [ qw/brawl clan admin/ ],
+			type => 'name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		member_id => {
 			type => 'null_valid|id_member($period_id,$clan_id,$team_id)',
 		},
 		member_name => {
-			type => 'valid|null_valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/brawl clan admin/ ],
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {
@@ -874,7 +941,7 @@ remove_member_from_brawl => {
 add_member_to_brawl => {
 	brief => 'Add member to brawl team',
 	level => 'clan_moderator($clan_id)',
-	category => [ qw/member brawl clan admin/ ],
+	category => [ qw/brawl member clan admin/ ],
 	description => 'Here you can add members to brawl teams.',
 	params => [
 		period_id => {
@@ -883,19 +950,26 @@ add_member_to_brawl => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
 		team_name => {
-			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
-			hidden => [ qw/member brawl clan admin/ ],
+			type => 'name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
 		member_name => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member brawl clan admin/ ],
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {
@@ -918,10 +992,10 @@ add_member_to_brawl => {
 		}
 	},
 },
-set_brawl_pos => {
-	brief => 'Set position of team members',
+change_brawl_pos => {
+	brief => 'Change position of team members',
 	level => 'clan_moderator($clan_id)',
-	category => [ qw/member brawl clan admin/ ],
+	category => [ qw/brawl member clan admin/ ],
 	description => 'Before each round draw happens, you are required to have picked your team lineup.',
 	params => [
 		period_id => {
@@ -930,19 +1004,32 @@ set_brawl_pos => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		team_id => {
 			type => 'id_brawlteam($period_id,$clan_id)',
 		},
 		team_name => {
-			type => 'valid|name_brawlteam($period_id,$clan_id,$team_id)',
-			hidden => [ qw/member brawl clan admin/ ],
+			type => 'name_brawlteam($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		old_positions => {
+			type => 'positions_brawlteam($period_id,$clan_id,$team_id)',
+			html => 1,
+			informational => 1,
+			brief => 'Current positions',
 		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id,$team_id)',
 		},
 		member_name => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member brawl clan admin/ ],
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		pos_id => {
 			type => 'null_valid|enum(1,2,3,4,5)',
@@ -963,8 +1050,8 @@ set_brawl_pos => {
 		}
 	},
 },
-set_member_name => {
-	brief => 'Rename member',
+change_member_name => {
+	brief => 'Change member name',
 	level => 'clan_moderator($clan_id)',
 	category => [ qw/member clan admin/ ],
 	description => 'You can change the displayed name of a member here.',
@@ -975,12 +1062,18 @@ set_member_name => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
 		oldname => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member clan admin/ ],
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		newname => {
 			type => 'valid_new|name_member($period_id,$clan_id,$member_id)',
@@ -997,8 +1090,8 @@ set_member_name => {
 		}
 	},
 },
-set_member_rank => {
-	brief => 'Set member\'s rank',
+change_member_rank => {
+	brief => 'Change member rank',
 	level => 'clan_moderator($clan_id)',
 	category => [ qw/member clan admin/ ],
 	description => 'This is not the player\'s playing strength, but a string that will be placed next to their name. You may for instace set a Captain rank on one member. If you put a % sign in the rank, for instance "%, Fishmonger", the % will be changed to the member name, resulting in "Fred, Fishmonger" or something in this case. Otherwise the rank will be placed before the member\'s name.',
@@ -1009,17 +1102,23 @@ set_member_rank => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
-		name => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member clan admin/ ],
+		member_name => {
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		oldrank => {
 			type => 'valid|null_valid|rank_member($period_id,$clan_id,$member_id)',
 			brief => 'Old rank',
-			readonly => [ qw/member clan admin/ ],
+			informational => 1,
 		},
 		newrank => {
 			type => 'null_valid|rank_member($period_id,$clan_id,$member_id)',
@@ -1048,12 +1147,18 @@ add_member_alias => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
-		name => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member clan admin/ ],
+		member_name => {
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		member_alias => {
 			type => 'valid_new|name_kgs($period_id)',
@@ -1084,12 +1189,18 @@ remove_member_alias => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 		},
-		name => {
-			type => 'valid|name_member($period_id,$clan_id,$member_id)',
-			hidden => [ qw/member clan admin/ ],
+		member_name => {
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		alias_id => {
 			type => 'id_kgs($period_id,$clan_id,$member_id)',

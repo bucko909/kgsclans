@@ -346,6 +346,18 @@ sub is_clan_moderator {
 	return $isadmin;
 }
 
+sub is_clan_member {
+	my ($c, $clan_id) = @_;
+	my $clan_info = $c->clan_info($clan_id);
+	my $ismember;
+	if ($c->{phpbbsess}{groupids}) {
+		foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
+			$ismember = 1 if $groupid == $clan_info->{forum_group_id} || $groupid == 287;
+		}
+	}
+	return $ismember;
+}
+
 sub get_option {
 	my ($this, $name, $period) = @_;
 	$period ||= $this->{period_info}{id};

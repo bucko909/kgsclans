@@ -47,9 +47,10 @@ sub process_form {
 	}
 	my %params;
 	$params{$_} = $input_params_info->{$_}->{value} foreach (keys %$input_params_info);
+	my $category = $c->escapeHTML($c->param($name.'_category') || 'admin');
 	if (%reasons) {
 		$c->log($name, 0, "Bad input.", \%params);
-		print &output_form($c, $name, $c->param($name.'_category') || 'admin', $input_params, $input_params_info, \%reasons);
+		print &output_form($c, $name, $category, $input_params, $input_params_info, \%reasons);
 		$c->footer;
 		exit 0;
 	}
@@ -66,18 +67,30 @@ sub process_form {
 		} else {
 			print $c->p("Failure: $reason");
 		}
+		use Data::Dumper;
+		print $c->p(Dumper(\%params));
 		if ($params{member_id}) {
-			print $c->p(qq|To member <a href="admin.pl?member_id=$params{member_id}">admin</a> or <a href="index.pl?page=games&amp;memberid=$params{member_id}">game list</a>.|);
+			print $c->p(qq|To member <a href="admin.pl?member_id=$params{member_id}">admin</a> or <a href="index.pl?page=games&amp;member=$params{member_id}">game list</a>.|);
 		}
 		if ($params{team_id}) {
-			print $c->p(qq|<a href="admin.pl?team_id=$params{team_id}">To team admin</a>.|);
+			print $c->p(qq|To <a href="admin.pl?team_id=$params{team_id}">team admin</a>.|);
 		}
 		if ($params{clan_id}) {
-			print $c->p(qq|To clan <a href="admin.pl?clan_id=$params{clan_id}">admin</a> or <a href="index.pl?page=clan&amp;clanid=$params{clan_id}">member list</a>.|);
+			print $c->p(qq|To clan <a href="admin.pl?clan_id=$params{clan_id}">admin</a> or <a href="index.pl?page=clan&amp;clan=$params{clan_id}">member list</a>.|);
 		}
 		if ($c->is_admin) {
-			print $c->p(qq|<a href="admin.pl">To overall admin</a>.|);
+			print $c->p(qq|To <a href="admin.pl">overall admin</a>.|);
 		}
+		print $c->p(qq|To <a href="index.pl">summary</a>.|);
+		print qq|<form name="$name" method="post">|;
+		print qq|<input type="hidden" name="form" value="$name"/>|;
+		print qq|<input type="hidden" name="$name\_category" value="$category"/>|;
+		for my $param_name (keys %$input_params_info) {
+			next if is('informational', $input_params_info->{$param_name}, $category);
+			my $value = $input_params_info->{$param_name}{value};
+			print qq|<input type="hidden" name="$name\_$param_name" value="|.$c->escapeHTML($value).qq|"/>|;
+		}
+		print qq|</form><p>Or you can <a href="javascript:document.$name.submit()">do this form again</a>.</p>|;
 		$c->footer;
 		exit 0;
 	} else {
@@ -116,27 +129,36 @@ sub gen_form {
 
 sub form_list {
 	my ($c, $category) = @_;
-	my @form_names = sort grep { grep { $_ eq $category } @{$forms{$_}{category}} } keys %forms;
+	my @form_names = grep { grep { $_ eq $category } @{$forms{$_}{category}} } keys %forms;
 	my %param_cache;
 	my %access_cache;
-	my $output = "<ul>";
+	my %category_forms;
 	for my $form_name (@form_names) {
-		my @param_names = @{$forms{$form_name}{params}};
-		my %param_hash;
-		for my $param_name (@param_names) {
-			if (!exists $param_cache{$param_name}) {
-				$param_cache{$param_name} = $c->param($param_name);
-			}
-			$param_hash{$param_name} = $param_cache{$param_name} if defined $param_cache{$param_name};
-		}
-		# TODO check access
-		my $params = "";
-		if (keys %param_hash) {
-			$params = "&amp;".join("&amp;", map { "$form_name\_$_=$param_hash{$_}" } keys %param_hash);
-		}
-		$output .= qq|<li><a href="?form=$form_name&amp;$form_name\_category=$category$params">$forms{$form_name}{brief}</a></li>|;
+		$category_forms{$forms{$form_name}{category}[0]} ||= [];
+		push @{$category_forms{$forms{$form_name}{category}[0]}}, $form_name;
 	}
-	$output .= "</ul>";
+	my $output = '';
+	for my $category_name (keys %category_forms) {
+		$output .= "<h3>Category: $category_name</h3>";
+		$output .= "<ul>";
+		for my $form_name (sort { $forms{$a}{brief} cmp $forms{$b}{brief} } @{$category_forms{$category_name}}) {
+			my @param_names = @{$forms{$form_name}{params}};
+			my %param_hash;
+			for my $param_name (@param_names) {
+				if (!exists $param_cache{$param_name}) {
+					$param_cache{$param_name} = $c->param($param_name);
+				}
+				$param_hash{$param_name} = $param_cache{$param_name} if defined $param_cache{$param_name};
+			}
+			# TODO check access
+			my $params = "";
+			if (keys %param_hash) {
+				$params = "&amp;".join("&amp;", map { "$form_name\_$_=$param_hash{$_}" } keys %param_hash);
+			}
+			$output .= qq|<li><a href="?form=$form_name&amp;$form_name\_category=$category$params">$forms{$form_name}{brief}</a></li>|;
+		}
+		$output .= "</ul>";
+	}
 	return $output;
 }
 
@@ -149,6 +171,10 @@ sub fill_values {
 	foreach my $param_name (@$output_params) {
 		# We'll be filling this out
 		my $info = $output_params_info->{$param_name};
+
+		if (is('informational', $info, 'admin')) {
+			next;
+		}
 		
 		# Do we have a value which was automatically supplied to the form in the
 		# first place? (If this is equal to the below, we know the user did not
@@ -310,10 +336,14 @@ sub output_form {
 		my $qparam_name = $c->escapeHTML($param_name);
 		$output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($info->{auto_value}||"").qq|"/>|;
 		my $value = $info->{value};
-		my $hidden = grep { $_ eq $category } @{$info->{forms_info}{hidden} || $info->{type_defaults}{hidden} || []};
+		my $hidden = is('hidden', $info, $category);
+		my $informational = is('informational', $info, $category);
+		my $html = is('html', $info, $category);
 		if ($hidden) {
-			# This element is hidden at this level.
-			$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+			# This element is hidden at this level. Informational elements need no content generating at all.
+			if (!$informational) {
+				$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+			}
 		} else {
 			# Visible form element
 			$output .= qq|<tr>|;
@@ -331,16 +361,22 @@ sub output_form {
 				$output .= qq|<p>$description</p>|;
 			}
 			$output .= qq|</td>|;
-			my $readonly = grep { $_ eq $category } @{$info->{forms_info}{readonly} || $info->{type_defaults}{readonly} || []};
-			if ($readonly) {
+			my $readonly = is('readonly', $info, $category);
+			if ($readonly || $informational) {
 				my $value_display;
 				if ($value && $info->{value_list}) {
 					my @res = grep { $value eq $_->[0] } @{$info->{value_list}};
 					$value_display = $res[0][1] if @res;
 				}
 				$value_display ||= $value || 'None';
-				$output .= qq|<td class="readonly">|.$c->escapeHTML($value_display).qq|</td></tr>|;
-				$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+				if ($html) {
+					$output .= qq|<td class="readonly">$value_display</td></tr>|;
+				} else {
+					$output .= qq|<td class="readonly">|.$c->escapeHTML($value_display).qq|</td></tr>|;
+				}
+				if (!$informational) {
+					$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+				}
 				next;
 			}
 			$output .= qq|<td class="edit">|;
@@ -514,4 +550,14 @@ sub bad_value {
 	}
 
 	return;
+}
+
+sub is {
+	my ($test, $info, $category) = @_;
+	my $value = $info->{forms_info}{$test} || $info->{type_defaults}{$test};
+	if (ref $value) {
+		return scalar grep { $_ eq $category } @$value;
+	} else {
+		return $value;
+	}
 }

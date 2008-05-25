@@ -342,13 +342,13 @@ id_brawlteam => {
 	list => sub {
 		my ($c, $period, $clan) = @_;
 		if ($period && $clan) {
-			return $c->db_select("SELECT brawl_teams.team_id, brawl_teams.name FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ?", {}, $period, $clan);
+			return $c->db_select("SELECT brawl_teams.team_id, brawl_teams.name FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? ORDER BY team_number", {}, $period, $clan);
 		} elsif ($period) {
-			return $c->db_select("SELECT brawl_teams.team_id, CONCAT(brawl_teams.name, ' (', clans.name, ')') FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ?", {}, $period);
+			return $c->db_select("SELECT brawl_teams.team_id, CONCAT(brawl_teams.name, ' (', clans.name, ')') FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? ORDER BY clans.name, team_number", {}, $period);
 		} elsif ($clan) {
-			return $c->db_select("SELECT brawl_teams.team_id, brawl_teams.name FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.id = ?", {}, $clan);
+			return $c->db_select("SELECT brawl_teams.team_id, brawl_teams.name FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.id = ? ORDER BY team_number", {}, $clan);
 		} else {
-			return $c->db_select("SELECT brawl_teams.team_id, CONCAT(brawl_teams.name, ' (', clans.name, ', period ', clans.clanperiod, ')') FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id");
+			return $c->db_select("SELECT brawl_teams.team_id, CONCAT(brawl_teams.name, ' (', clans.name, ', period ', clans.clanperiod, ')') FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id ORDER BY clanperiod, clans.name, team_number");
 		}
 	},
 	infer => sub {
@@ -383,6 +383,31 @@ name_brawlteam => {
 		my ($c, $period, $clan, $teamid) = @_;
 		if ($teamid) {
 			return $c->db_selectone("SELECT brawl_teams.name FROM brawl_teams WHERE brawl_teams.team_id = ?", {}, $teamid);
+		}
+	},
+},
+positions_brawlteam => {
+	defaults => {
+		brief => 'Brawl team name',
+	},
+	check => sub {
+		/^[a-zA-Z0-9 ,.-]+$/
+	},
+	exists => undef,
+#	list => sub {}
+	get => sub {
+		my ($c, $period, $clan, $teamid) = @_;
+		if ($teamid) {
+			# TODO should be more generic
+			my $results = $c->db_select("SELECT brawl.position, members.id, members.name, members.rank FROM brawl INNER JOIN members ON members.id = brawl.member_id WHERE brawl.team_id = ? ORDER BY brawl.position", {}, $teamid);
+			my @brawl;
+			return "Team has no members." if !$results || !@$results;
+			my $result = "<ul>";
+			for(@$results) {
+				$result .= "<li>$_->[0]: ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";
+			}
+			$result .= "</ul>";
+			return $result;
 		}
 	},
 },
