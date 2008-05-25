@@ -56,14 +56,19 @@ brawl_draw => {
 			$p->{this_round} = $p->{last_round} + 1;
 			if ($p->{last_round} == 0) {
 				# We're generating round 1 based on the preliminaries.
-				my $fighting_over = $c->db_select("SELECT nextround_pos FROM brawldraw WHERE clanperiod = ? AND round = 0", {}, $p->{period_id});
+				my $fighting_over = $c->db_select("SELECT DISTINCT(nextround_pos) FROM brawldraw WHERE clanperiod = ? AND round = 0", {}, $p->{period_id});
+				$p->{fighting_over} = join ',', map { $_->[0] } @$fighting_over;
+				$p->{teams_unsorted} = '';
+				$p->{teams_sorted} = '';
 				for my $position (@$fighting_over) {
 					# Get all teams fighting over position
-					my $teams = $c->db_select("SELECT team_id, SUM(position), SUM(IF(result>0,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = 0 AND nextround_pos = ? GROUP BY team_id", {}, $p->{period_id}, $position);
+					my $teams = $c->db_select("SELECT team_id, SUM(position), SUM(IF(result>0,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = 0 AND nextround_pos = ? GROUP BY team_id", {}, $p->{period_id}, $position->[0]);
+					$p->{teams_unsorted} .= "$position->[0]:".(join ',', map { "$_->[0]=($_->[2].$_->[1])" } @$teams).";";
 					# Sort by wins (desc) then position (asc).
 					$teams = [ sort { $b->[2] <=> $a->[2] || $a->[1] <=> $b->[1] } @$teams ];
+					$p->{teams_sorted} .= "$position->[0]:".(join ',', map { "$_->[0]=($_->[2].$_->[1])" } @$teams).";";
 					# Insert the winner into the brawl.
-					$insert_team->($p->{this_round}, $position, $teams->[0], int($position/2));
+					$insert_team->($p->{this_round}, $position->[0], $teams->[0], int($position->[0]/2));
 				}
 			} else {
 				my $winners = $c->db_select("SELECT team_id, nextround_pos FROM brawldraw WHERE clanperiod = ? AND round = ? AND result = 1", {}, $p->{period_id}, $p->{last_round});
