@@ -37,8 +37,8 @@ brawl_draw => {
 		my %team_members;
 		for(@$members) {
 			$team_members{$_->[0]} ||= [];
-			next unless $_->[1] >= 1 && $_->[1] <= 5;
-			$team_members{$_->[0]}[$_->[1]-1] = $_->[2];
+			next unless $_->[1] >= 0 && $_->[1] <= 4;
+			$team_members{$_->[0]}[$_->[1]] = $_->[2];
 			$team_members{$_->[0]}[5]++;
 		}
 
