@@ -52,13 +52,13 @@ if ($page->[1]) {
 		print " Old revisions: ".join(' ', map { qq|<a href="index.pl?$lqstring&amp;revision=$_">$_</a>| } reverse (1..$page->[1]-1)).".";
 	}
 	if ($c->is_admin) {
-		print qq| <a href="admin.pl?form=edit_page&amp;edit_page_name=$pagename&amp;edit_page_revision=$page->[1]">Edit</a>.|;
+		print qq| <a href="admin.pl?form=change_page&amp;change_page_name=$pagename&amp;change_page_revision=$page->[1]">Edit</a>.|;
 	}
 	print "</p>";
 } else {
 	my $lqstring = $qstring;
 	$lqstring .= "&amp;period=".$c->param('period') if $c->param('period');
-	print qq|<p>This page is was not found. <a href="admin.pl?form=new_page&amp;new_page_name=$pagename">Create it</a>.</p>|;
+	print qq|<p>This page is was not found. <a href="admin.pl?form=add_page&amp;add_page_name=$pagename">Create it</a>.</p>|;
 }
 
 $c->footer;
