@@ -339,11 +339,11 @@ sub brawl_battle {
 
 	for (@$memberdata) {
 		if ($_->[0] == $positions[0]) {
-			$top[$_->[1]-1] = $_;
+			$top[$_->[1]] = $_;
 		} else {
-			$bottom[$_->[1]-1] = $_;
+			$bottom[$_->[1]] = $_;
 		}
-		$urls[$_->[1]-1] = $_->[7];
+		$urls[$_->[1]] = $_->[7];
 	}
 
 	# If we get here we know it's a fight between two teams.

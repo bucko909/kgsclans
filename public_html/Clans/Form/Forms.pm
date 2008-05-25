@@ -44,8 +44,8 @@ brawl_draw => {
 
 		my $insert_members = sub {
 			my ($round, $position, $team) = @_;
-			for(1 .. 5) {
-				$c->db_do("INSERT INTO brawldraw_results SET clanperiod=?, round=?, position=?, seat=?, member_id=?, is_black=?", {}, $p->{period_id}, $round, $position, $_, $team_members{$team->[0]}[$_-1], ($position+$round+$_+1)%2);
+			for(0 .. 4) {
+				$c->db_do("INSERT INTO brawldraw_results SET clanperiod=?, round=?, position=?, seat=?, member_id=?, is_black=?", {}, $p->{period_id}, $round, $position, $_, $team_members{$team->[0]}[$_], ($position+$round+$_)%2);
 			}
 		};
 
