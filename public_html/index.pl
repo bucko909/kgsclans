@@ -674,7 +674,7 @@ sub clan_brawllist {
 			return "Clan ID \"$clanid\" is invalid";
 		}
 	}
-	my $teams = $c->db_select("SELECT brawl_teams.team_id, name, team_number, COUNT(member_id) FROM brawl_teams INNER JOIN brawl ON brawl_teams.team_id = brawl.team_id WHERE position >0 AND position < 6 AND clan_id = ? GROUP BY brawl_teams.team_id ORDER BY team_number", {}, $clanid);
+	my $teams = $c->db_select("SELECT brawl_teams.team_id, name, team_number, COUNT(member_id) FROM brawl_teams LEFT OUTER JOIN brawl ON brawl_teams.team_id = brawl.team_id WHERE position >0 AND position < 6 AND clan_id = ? GROUP BY brawl_teams.team_id ORDER BY team_number", {}, $clanid);
 	if (!$teams || !@$teams) {
 		return "<h3>Brawl Teams</h3><p>No brawl teams created!</p>";
 	}
