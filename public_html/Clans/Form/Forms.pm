@@ -27,7 +27,7 @@ brawl_draw => {
 
 		my $insert_team = sub {
 			my ($round, $position, $team, $next) = @_;
-			$c->db_do("INSERT INTO brawldraw SET clanperiod=?, round=?, team_id=?, position=?, nextround_pos=?", {}, $p->{period_id}, $round, $team->[0], $position, $next);
+			$c->db_do("INSERT INTO brawldraw SET clanperiod=?, round=?, team_id=?, position=?, nextround_pos=?", {}, $p->{period_id}, $round, $team, $position, $next);
 		};
 
 		# Get a list of team members.
@@ -56,24 +56,46 @@ brawl_draw => {
 			$p->{this_round} = $p->{last_round} + 1;
 			if ($p->{last_round} == 0) {
 				# We're generating round 1 based on the preliminaries.
-				my $fighting_over = $c->db_select("SELECT DISTINCT(nextround_pos) FROM brawldraw WHERE clanperiod = ? AND round = 0", {}, $p->{period_id});
-				$p->{fighting_over} = join ',', map { $_->[0] } @$fighting_over;
+				my $fighting_over = $c->db_select("SELECT nextround_pos, COUNT(DISTINCT team_id), SUM(IF(result=1,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = 0 GROUP BY nextround_pos", {}, $p->{period_id});
+				$p->{fighting_over} = join ',', map { "$_->[0]=($_->[2]g/$_->[1]t)" } @$fighting_over;
 				$p->{teams_unsorted} = '';
 				$p->{teams_sorted} = '';
 				for my $position (@$fighting_over) {
+					# First ensure all positions have complete results.
+					# Simple check: The number of wins in the group should be equal to the number of games, which is in turn equal to 1 + 2 + ... + n-1 where n is the number of teams.
+					# This is of course equal to n(n-1)/2.
+					if ($position->[2] != $position->[1] * ($position->[1] - 1) / 2) {
+						return (0, "It appears that the preliminary round is not yet complete ($position->[2] results for $position->[1] teams).");
+					}
+				}
+				for my $position (@$fighting_over) {
 					# Get all teams fighting over position
-					my $teams = $c->db_select("SELECT team_id, SUM(position), SUM(IF(result>0,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = 0 AND nextround_pos = ? GROUP BY team_id", {}, $p->{period_id}, $position->[0]);
+					my $teams = $c->db_select("SELECT team_id, SUM(position), SUM(IF(result=1,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = 0 AND nextround_pos = ? GROUP BY team_id", {}, $p->{period_id}, $position->[0]);
 					$p->{teams_unsorted} .= "$position->[0]:".(join ',', map { "$_->[0]=($_->[2].$_->[1])" } @$teams).";";
 					# Sort by wins (desc) then position (asc).
 					$teams = [ sort { $b->[2] <=> $a->[2] || $a->[1] <=> $b->[1] } @$teams ];
 					$p->{teams_sorted} .= "$position->[0]:".(join ',', map { "$_->[0]=($_->[2].$_->[1])" } @$teams).";";
 					# Insert the winner into the brawl.
-					$insert_team->($p->{this_round}, $position->[0], $teams->[0], int($position->[0]/2));
+					$insert_team->($p->{this_round}, $position->[0], $teams->[0][0], int($position->[0]/2));
 				}
 			} else {
+				# We're generating round n+1 based on round n > 0
+				# First check round n is complete.
+				my $check = $c->db_selectone("SELECT COUNT(DISTINCT nextround_pos) - SUM(IF(result=1,1,0)) FROM brawldraw WHERE clanperiod = ? AND round = ?", {}, $p->{period_id}, $p->{last_round});
+				if ($check != 0) {
+					return (0, "It appears that the current round is not yet complete.");
+				}
+
 				my $winners = $c->db_select("SELECT team_id, nextround_pos FROM brawldraw WHERE clanperiod = ? AND round = ? AND result = 1", {}, $p->{period_id}, $p->{last_round});
-				for my $team (@$winners) {
-					$insert_team->($p->{this_round}, $team->[1], $team, int($team->[1]/2));
+				$p->{winning_teams} = join ',', map { "$_->[1]:$_->[0]" } @$winners;
+				if (@$winners == 1) {
+					# In this case we found the brawl winner. The next round position is not defined!
+					$insert_team->($p->{this_round}, $winners->[0][1], $winners->[0][0], undef);
+				} else {
+					# It's a normal round.
+					for my $team (@$winners) {
+						$insert_team->($p->{this_round}, $team->[1], $team->[0], int($team->[1]/2));
+					}
 				}
 			}
 		} else {
@@ -172,7 +194,7 @@ brawl_draw => {
 				my $pos = 0;
 				for my $team (@auto_teams) {
 					my $this_pos = $position_map[$pos++];
-					$insert_team->(1, $this_pos, $team, int($this_pos/2));
+					$insert_team->(1, $this_pos, $team->[0], int($this_pos/2));
 				}
 
 				# The preliminary round is numbered 0, so let's do some insertions. Note that $pos currently tells us the nextround_pos for each group.
@@ -181,8 +203,8 @@ brawl_draw => {
 					my $this_pos = $position_map[$pos++];
 					for (my $t1=0; $t1 < @$group; $t1++) {
 						for (my $t2=$t1+1; $t2 < @$group; $t2++) {
-							$insert_team->($p->{this_round}, $prepos++, $group->[$t1], $this_pos);
-							$insert_team->($p->{this_round}, $prepos++, $group->[$t2], $this_pos);
+							$insert_team->($p->{this_round}, $prepos++, $group->[$t1][0], $this_pos);
+							$insert_team->($p->{this_round}, $prepos++, $group->[$t2][0], $this_pos);
 						}
 					}
 				}
@@ -193,7 +215,7 @@ brawl_draw => {
 				my $pos = 0;
 				for my $team (@$teams) {
 					my $this_pos = $position_map[$pos++];
-					$insert_team->($p->{this_round}, $this_pos, $team, int($this_pos/2));
+					$insert_team->($p->{this_round}, $this_pos, $team->[0], int($this_pos/2));
 				}
 			}
 		}
