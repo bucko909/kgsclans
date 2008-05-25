@@ -404,7 +404,7 @@ positions_brawlteam => {
 			return "Team has no members." if !$results || !@$results;
 			my $result = "<ul>";
 			for(@$results) {
-				$result .= "<li>$_->[0]: ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";
+				$result .= "<li>".($_->[0]+1).": ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";
 			}
 			$result .= "</ul>";
 			return $result;
