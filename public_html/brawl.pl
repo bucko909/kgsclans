@@ -365,13 +365,13 @@ sub brawl_battle {
 	$output .= qq|</tr><tr>|;
 	for my $member (@top) {
 		my $class;
-		if ($_->[5]) {
+		if ($member->[5]) {
 			$class = "player_black";
 		} else {
 			$class = "player_white";
 		}
-		if ($_->[6]) {
-			if ($_->[6] == 1) {
+		if ($member->[6]) {
+			if ($member->[6] == 1) {
 				$class .= " player_won";
 			} else {
 				$class .= " player_lost";
@@ -396,13 +396,13 @@ sub brawl_battle {
 	$output .= qq|</tr><tr>|;
 	for my $member (@bottom) {
 		my $class;
-		if ($_->[5]) {
+		if ($member->[5]) {
 			$class = "player_black";
 		} else {
 			$class = "player_white";
 		}
-		if ($_->[6]) {
-			if ($_->[6] == 1) {
+		if ($member->[6]) {
+			if ($member->[6] == 1) {
 				$class .= " player_won";
 			} else {
 				$class .= " player_lost";

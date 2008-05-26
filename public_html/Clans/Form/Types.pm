@@ -435,7 +435,7 @@ enum => {
 },
 text => {
 	check => sub {
-		/^[a-zA-Z0-9,:\[\]\-]+$/
+		/^[a-zA-Z0-9,:\[\]\\\/\-.><]+$/
 	},
 	exists => undef,
 #	list => sub { },
@@ -484,5 +484,14 @@ id_forum => {
 		my ($c) = @_;
 		return [ sort { lc $a->[1] cmp lc $b->[1] } @{$c->db_select("SELECT user_id, username FROM phpbb3_users")} ];
 	},
+},
+boolean => {
+	defaults => {
+		input_type => 'checkbox',
+	},
+	check => sub {
+		/^[01]$/
+	},
+	exists => undef,
 },
 );

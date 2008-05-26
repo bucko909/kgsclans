@@ -59,13 +59,22 @@ sub process_form {
 		$c->die_fatal_permissions("Sorry, you do not have permission to access the $forms{$name}{brief} form ($reason)");
 	}
 	if (my $action = $forms{$name}{action}) {
-		my ($success, $reason) = $action->($c, \%params);
+		my ($success, $reason, $override, $override_reason) = $action->($c, \%params);
 		$c->log($name, $success, $reason, \%params);
-		print qq|<h3>|.$c->escapeHTML($forms{$name}{brief}).qq|</h3>|;
 		if ($success) {
+			print qq|<h3>|.$c->escapeHTML($forms{$name}{brief}).qq|</h3>|;
 			print $c->p("Success: $reason");
 		} else {
-			print $c->p("Failure: $reason");
+			if ($override && $c->is_admin) {
+				$input_params_info->{$override}{value} = 0;
+				$reasons{$override} = $override_reason;
+				print &output_form($c, $name, $category, $input_params, $input_params_info, \%reasons, $reason);
+				$c->footer;
+				exit 0;
+			} else {
+				print qq|<h3>|.$c->escapeHTML($forms{$name}{brief}).qq|</h3>|;
+				print $c->p("Failure: $reason");
+			}
 		}
 		if ($params{member_id}) {
 			print $c->p(qq|To member <a href="admin.pl?member_id=$params{member_id}">admin</a> or <a href="index.pl?page=games&amp;member=$params{member_id}">game list</a>.|);
@@ -171,6 +180,7 @@ sub fill_values {
 		my $info = $output_params_info->{$param_name};
 
 		if (is('informational', $info, 'admin')) {
+			# Informational parameters cannot be passed.
 			next;
 		}
 		
@@ -186,6 +196,21 @@ sub fill_values {
 		if (defined($value = $c->param($name.'_'.$param_name))) {
 			if (!exists $info->{auto_value} || $info->{auto_value} ne $value) {
 				$info->{user_value} = $value;
+			}
+		}
+
+		if (is('override', $info, 'admin')) {
+			# Overrides have no auto_value and are always valid null.
+			if (!exists $info->{user_value}) {
+				delete $info->{auto_value};
+				next;
+			}
+			
+			# Overrides can be set only by admins.
+			if (!$c->is_admin) {
+				delete $info->{auto_value};
+				delete $info->{user_value};
+				next;
 			}
 		}
 
@@ -301,7 +326,7 @@ sub fill_values {
 				return qq|Form $qname had a hidden param |.$c->escapeHTML($param_name).qq| which was initialised to null.|;
 			}
 
-			$reasons{$param_name} ||= "No value specified for $param_name." unless $info->{null_valid};
+			$reasons{$param_name} ||= "No value specified for $param_name." unless $info->{null_valid} or is('override', $info, 'admin');
 		}
 	}
 	if ($reason_hash) {
@@ -311,7 +336,7 @@ sub fill_values {
 }
 
 sub output_form {
-	my ($c, $name, $category, $output_params, $output_params_info, $reasons) = @_;
+	my ($c, $name, $category, $output_params, $output_params_info, $reasons, $error) = @_;
 	my $qname = $c->escapeHTML($name);
 	my $output = "";
 
@@ -321,6 +346,11 @@ sub output_form {
 		$form_description = $c->escapeHTML($form_description);
 		$form_description =~ s/\n/<br\/>/g;
 		$output .= qq|<p class="form">$form_description</p>|;
+	}
+	if ($error) {
+		$output .= qq|<p class="form_error">Input is invalid ($error).</p>|;
+	} elsif ($reasons) {
+		$output .= qq|<p class="form_error">Input is invalid (see below).</p>|;
 	}
 	$output .= qq|<form name="$qname" method="post">|;
 	$output .= qq|<input type="hidden" name="form" value="$qname"/>|;
@@ -332,10 +362,15 @@ sub output_form {
 	foreach my $param_name (@$output_params) {
 		my $info = $output_params_info->{$param_name};
 		my $qparam_name = $c->escapeHTML($param_name);
-		$output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($info->{auto_value}||"").qq|"/>|;
 		my $value = $info->{value};
 		my $hidden = is('hidden', $info, $category);
 		my $informational = is('informational', $info, $category);
+		my $override = is('override', $info, $category);
+		if ($override && !exists $info->{value}) {
+			# Overrides are only visible once they are enabled.
+			next;
+		}
+		$output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($info->{auto_value}||"").qq|"/>| unless $override || $informational;
 		my $html = is('html', $info, $category);
 		if ($hidden) {
 			# This element is hidden at this level. Informational elements need no content generating at all.
@@ -381,6 +416,12 @@ sub output_form {
 			my $input_type = $info->{forms_info}{input_type} || $info->{type_defaults}{input_type} || 'edit';
 			if ($input_type eq 'textarea') {
 				$output .= qq|<textarea name="$qname\_$qparam_name" type="text" cols="80" rows="15">$value</textarea>|;
+			} elsif ($input_type eq 'checkbox') {
+				if ($value) {
+					$output .= qq|<input type="checkbox" name="$qname\_$qparam_name" value="1" checked="checked"/>|;
+				} else {
+					$output .= qq|<input type="checkbox" name="$qname\_$qparam_name" value="1"/>|;
+				}
 			} elsif ($info->{value_list}) {
 				# Since we have a list of valid values, we make a <select>
 				my $update_str = $info->{force_update} ? qq| onchange="document.$qname.process.value='';document.$qname.$qname\_changed.value='$qparam_name';document.$qname.submit();"| : "";

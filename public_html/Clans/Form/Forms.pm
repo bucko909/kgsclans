@@ -112,8 +112,6 @@ brawl_draw => {
 
 			# Remove all teams which do not have 5 members.
 			$p->{all_teams} = join ',', map { $_->[0] } @$teams;
-			$teams = [ grep { $team_members{$_->[0]} && $team_members{$_->[0]}[5] == 5 } @$teams ];
-			$p->{culled_teams} = join ',', map { $_->[0] } @$teams;
 
 			$p->{current_champion} = $c->get_option('BRAWLCHAMPION');
 
@@ -130,17 +128,25 @@ brawl_draw => {
 			# We do this by recursively pairing top with bottom on opponent groups.
 			$p->{max_teams} = 2 ** $p->{max_rounds};
 			my @tree = (0 .. $p->{max_teams} - 1);
-			while(@tree > 1) {
+			while(@tree > 2) {
 				my @new_tree;
 				for(0 .. @tree / 2 - 1) {
-					push @new_tree, [$tree[$_], $tree[$#tree-$_]];
+					if (ref $tree[0]) {
+						# Subsequent swaps
+						push @new_tree, [$tree[$_], $tree[$#tree-$_]];
+					} else {
+						# First swap is reversed to make sure the seeds get even positions and make table render properly.
+						push @new_tree, [$tree[$#tree-$_], $tree[$_]];
+					}
 				}
 				@tree = @new_tree;
 			}
 			# Do a depth first search to pull the tree back apart.
 			my $dfs;
 			$dfs = sub { ref $_[0] ? ($dfs->($_[0][0]), $dfs->($_[0][1])) : $_[0] };
-			my @position_map = $dfs->(\@tree);
+			my @position_map_inverse = $dfs->(\@tree);
+			my @position_map;
+			$position_map[$position_map_inverse[$_]] = $_ for 0..$#position_map_inverse;
 				
 			if (@$teams > $p->{max_teams}) {
 				# We must generate a preliminary round.
@@ -182,43 +188,76 @@ brawl_draw => {
 					# In this case, at least one team gets in free. Bung 'em all on auto_teams.
 					push @auto_teams, splice(@$teams, 0, $p->{teams_on_min});
 					$p->{remain_slots} -= $p->{teams_on_min};
-					$p->{teams_on_min} = 0;
+					$p->{teams_on_min} = @$teams;
 					$p->{min_opponents} = 1;
+				}
+
+				# There may be some teams in the preliminary round which have no lineup. If this is the case, we cull them now, one by one.
+				{
+					my @culled = ();
+					while(1) {
+						my @cull = grep { !$team_members{$teams->[$_][0]} || $team_members{$teams->[$_][0]}[5] != 5 } (0..$#$teams);
+						if (@cull) {
+							my $cull_idx = $cull[$#cull];
+							push @culled, $teams->[$cull_idx];
+							splice(@$teams, $cull_idx, 1);
+							$p->{teams_on_min}++;
+							if ($p->{teams_on_min} == $p->{remain_slots} + 1) {
+								if ($p->{min_opponents} == 1) {
+									push @auto_teams, shift @$teams;
+									# Here, the following two are equal.
+									$p->{teams_on_min}--;
+									$p->{remain_slots}--;
+								} else {
+									$p->{teams_on_min} = 1;
+									$p->{min_opponents}--;
+								}
+							}
+						} else {
+							last;
+						}
+					}
+					$p->{cull_teams} = join ',', map { $_->[0] } @culled;
 				}
 
 				$p->{auto_teams} = join ',', map { $_->[0] } @auto_teams;
 				$p->{preliminary_teams} = join ',', map { $_->[0] } @$teams;
 
-				# Now we have a list of teams which need to be blocked together. We do one pass placing the highest seeded teams each in their respective slot, then reverse direction
-				# and place the rest, for example:
-				# 1 2  3 4
-				# 8 7  6 5
-				#     10 9
+				# Now we have a list of teams which need to be blocked together. We this by grouping the teams as follows:
+				# 1 3 5  8
+				# 2 4 6  9
+				#     7 10
 				my @fights;
-				for(0..$p->{remain_slots}-1) {
-					$fights[$_] = [$teams->[$_]];
-					for(my $i=2; $i<5; $i++) {
-						push @{$fights[$_]}, $teams->[$p->{remain_slots}*$i-$_] if $teams->[$p->{remain_slots}*$i-$_];
+				{
+					my $pos = 0;
+					for my $slot_num (0..$p->{remain_slots}-1) {
+						my $num_opponents = $p->{min_opponents} + ($slot_num > $p->{teams_on_min} ? 1 : 0);
+						$fights[$slot_num] = [];
+						for my $opp_num (1..$num_opponents) {
+							push @{$fights[$slot_num]}, $teams->[$pos++];
+						}
 					}
 				}
 
 				# We now have an array, @fights, which contains the teams to fight over slot n, and an array, @auto_teams, which contains teams who get through automatically.
 
-				# We insert the auto teams first. They live in round 1.
-				my $pos = 0;
-				for my $team (@auto_teams) {
-					my $this_pos = $position_map[$pos++];
-					$insert_team->(1, $this_pos, $team->[0], int($this_pos/2));
-				}
+				{
+					# We insert the auto teams first. They live in round 1.
+					my $pos = 0;
+					for my $team (@auto_teams) {
+						my $this_pos = $position_map[$pos++];
+						$insert_team->(1, $this_pos, $team->[0], int($this_pos/2));
+					}
 
-				# The preliminary round is numbered 0, so let's do some insertions. Note that $pos currently tells us the nextround_pos for each group.
-				my $prepos = 0;
-				for my $group (@fights) {
-					my $this_pos = $position_map[$pos++];
-					for (my $t1=0; $t1 < @$group; $t1++) {
-						for (my $t2=$t1+1; $t2 < @$group; $t2++) {
-							$insert_team->($p->{this_round}, $prepos++, $group->[$t1][0], $this_pos);
-							$insert_team->($p->{this_round}, $prepos++, $group->[$t2][0], $this_pos);
+					# The preliminary round is numbered 0, so let's do some insertions. Note that $pos currently tells us the nextround_pos for each group.
+					my $prepos = 0;
+					for my $group (@fights) {
+						my $this_pos = $position_map[$pos++];
+						for (my $t1=0; $t1 < @$group; $t1++) {
+							for (my $t2=$t1+1; $t2 < @$group; $t2++) {
+								$insert_team->($p->{this_round}, $prepos++, $group->[$t1][0], $this_pos);
+								$insert_team->($p->{this_round}, $prepos++, $group->[$t2][0], $this_pos);
+							}
 						}
 					}
 				}
@@ -375,7 +414,7 @@ add_page => {
 	# Edit page. Invoked only from custom forms.
 	brief => 'Add page',
 	level => 'admin',
-	category => [ qw/page admin/ ], # TODO not finished types for params
+	category => [ qw/page admin/ ],
 	params => [
 		period_id => {
 			type => 'id_clanperiod',
@@ -408,7 +447,7 @@ change_page => {
 	# Edit page. Invoked only from custom forms.
 	brief => 'Change page',
 	level => 'admin',
-	category => [ qw/page admin/ ], # TODO not finished types for params
+	category => [ qw/page admin/ ],
 	params => [
 		period_id => {
 			type => 'id_clanperiod',
@@ -490,6 +529,11 @@ change_clan_tag => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		oldtag => {
 			type => 'valid|tag_clan($period_id, $clan_id)',
 			brief => 'Old tag',
@@ -522,6 +566,11 @@ change_clan_url => {
 		},
 		clan_id => {
 			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		oldurl => {
 			type => 'valid|null_valid|url_clan($period_id,$clan_id)',
@@ -556,6 +605,11 @@ change_clan_info => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		oldinfo => {
 			type => 'valid|null_valid|info_clan($period_id,$clan_id)',
 			brief => 'Old description',
@@ -588,10 +642,20 @@ change_clan_leader => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		member_id => {
 			type => 'id_member($period_id,$clan_id)',
 			brief => 'New leader',
 			description => 'The new member you want displayed as the leader for your clan',
+		},
+		member_name => {
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {
@@ -601,6 +665,175 @@ change_clan_leader => {
 		} else {
 			return (1, "Changed clan leader.");
 		}
+	},
+},
+add_brawl_game => {
+	brief => 'Add brawl game',
+	level => 'clan_moderator($clan_id)',
+	category => [ qw/clan admin/ ],
+	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
+	params => [
+		period_id => {
+			type => 'id_clanperiod',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+			hidden => 1,
+		},
+		url => {
+			type => 'text',
+			brief => 'Game URL',
+			description => 'Link to the game at the KGS archives',
+		},
+		invert => {
+			type => 'boolean',
+			override => 1,
+			brief => 'Force acceptance of inverted colours',
+		},
+		nr => {
+			type => 'boolean',
+			override => 1,
+			brief => 'Force acceptance of NR/Jigo',
+		},
+		obadrules => {
+			type => 'boolean',
+			override => 1,
+			brief => 'Force acceptance of bad rules',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		if ($p->{url} =~ m{^default:(\w+)([><])(\w+)$}) {
+			$p->{black} = $1;
+			$p->{white} = $3;
+			$p->{result} = $2 eq '>' ? 'B' : 'W';
+			if (!$c->is_admin) {
+				return (0, "Only admins can add defaults.");
+			}
+		} elsif ($p->{url} =~ m[^http]) {
+			if ($p->{url} !~ m[http://files.gokgs.com/games/] && !$c->is_admin) {
+				return (0, "Only admins can add arbitrary urls. Please add one from the KGS archives.");
+			}
+			use LWP::Simple;
+			$p->{content} = get($p->{url});
+
+			$p->{black} = $1 if ($p->{content} =~ /PB\[([^\]]+)\]/);
+			$p->{white} = $1 if ($p->{content} =~ /PW\[([^\]]+)\]/);
+
+			$p->{result} = $1 if ($p->{content} =~ /RE\[([BW])\+/);
+
+			$p->{maintime} = $1 if ($p->{content} =~ /TM\[(\d+)\]/);
+			$p->{overtime} = $1 if ($p->{content} =~ /OT\[([^\]]+)\]/);
+			$p->{komi} = $1 if ($p->{content} =~ /KM\[([^\]]+)\]/);
+			$p->{rules} = $1 if ($p->{content} =~ /RU\[([^\]]+)\]/);
+			$p->{size} = $1 if ($p->{content} =~ /SZ\[([^\]]+)\]/);
+
+			$p->{content} = substr($p->{content},0,300);
+
+			if (!$p->{maintime} || $p->{maintime} != 1200) {
+				$p->{badrules} = 'maintime';
+			} elsif (!$p->{overtime} || $p->{overtime} ne '30/300 Canadian') {
+				$p->{badrules} = 'overtime';
+			} elsif (!$p->{komi} || $p->{komi} != 6.5) {
+				$p->{badrules} = 'komi';
+			} elsif (!$p->{rules} || $p->{rules} ne 'Japanese') {
+				$p->{badrules} = 'ruleset';
+			} elsif (!$p->{size} || $p->{size} != 19) {
+				$p->{badrules} = 'size';
+			}
+
+			if ($p->{badrules} && !$p->{obadrules}) {
+				return (0, "Game has bad ruleset ($p->{badrules})", "obadrules", "Check here to allow the game to pass anyway.");
+			}
+		} else {
+			return (0, "Invalid URL.");
+		}
+
+		unless($p->{black} && $p->{white}) {
+			return (0, "Could not find player names.");
+		}
+
+		if (!$p->{result} && !$p->{nr}) {
+			return (0, "Game has no result.", "nr", "Check here to allow the game to pass anyway.");
+		}
+
+		if ($p->{result} eq 'B') {
+			$p->{black_result} = 1;
+			$p->{white_result} = -1;
+		} elsif ($p->{result} eq 'W') {
+			$p->{black_result} = -1;
+			$p->{white_result} = 1;
+		} else {
+			$p->{black_result} = 0;
+			$p->{white_result} = 0;
+		}
+
+		$p->{black_id} = $c->db_selectone("SELECT member_id FROM aliases WHERE clanperiod = ? AND nick = ?", {}, @$p{qw/period_id black/});
+		$p->{white_id} = $c->db_selectone("SELECT member_id FROM aliases WHERE clanperiod = ? AND nick = ?", {}, @$p{qw/period_id white/});
+
+		unless($p->{black_id} && $p->{white_id}) {
+			return (0, "Could not find player's info in system.");
+		}
+
+		my $match = $c->db_select("SELECT d1.round, d1.position, d1.seat, d1.is_black FROM brawldraw_results d1 INNER JOIN brawldraw_results d2 ON d1.clanperiod = d2.clanperiod AND d1.round = d2.round AND FLOOR(d1.position/2) = FLOOR(d2.position/2) AND d1.seat = d2.seat WHERE d1.clanperiod = ? AND d1.member_id = ? AND d2.member_id = ?", {}, @$p{qw/period_id black_id white_id/});
+
+		if (@$match > 1) {
+			return (0, "Oh dear; there seems to be multiple possible matches for this game.");
+		} elsif (@$match == 0) {
+			return (0, "Could not find a game with these players");
+		}
+
+		$match = $match->[0];
+
+		@$p{qw/round black_position white_position game seat colour_correct/} = (@$match[0,1], $match->[1] + ($match->[1] % 2 ? -1 : 1), int($match->[1]/2), @$match[2,3]);
+
+		if (!$p->{colour_correct} && !$p->{invert}) {
+			return (0, "Ack! Colours are inverted!", "invert", "Check here to allow the game to pass with inverted colours.");
+		}
+
+		# We're ready!
+		$c->db_do("UPDATE brawldraw_results SET url=?, result=? WHERE clanperiod=? AND round=? AND position=? AND seat=? AND member_id=?", {}, $p->{url}, ($p->{result} eq 'B' ? 1 : -1), @$p{qw/period_id round black_position seat black_id/});
+		$c->db_do("UPDATE brawldraw_results SET url=?, result=? WHERE clanperiod=? AND round=? AND position=? AND seat=? AND member_id=?", {}, $p->{url}, ($p->{result} eq 'W' ? 1 : -1), @$p{qw/period_id round white_position seat white_id/});
+
+		# Can we infer a winrar?
+		$p->{black_wins} = $c->db_selectone("SELECT SUM(result) FROM brawldraw_results WHERE result > 0 AND clanperiod=? AND round=? AND position=?", {}, @$p{qw/period_id round black_position/});
+		if ($p->{black_wins} >= 3) {
+			$p->{winner_position} = $p->{black_position};
+			$p->{loser_position} = $p->{white_position};
+		} else {
+			$p->{white_wins} = $c->db_selectone("SELECT SUM(result) FROM brawldraw_results WHERE result > 0 AND clanperiod=? AND round=? AND position=?", {}, @$p{qw/period_id round white_position/});
+			if ($p->{white_wins} >= 3) {
+				$p->{winner_position} = $p->{white_position};
+				$p->{loser_position} = $p->{black_position};
+			} else {
+				$p->{results} = $c->db_selectone("SELECT COUNT(*) FROM brawldraw_results WHERE result IS NOT NULL AND clanperiod=? AND round=? AND position=?", {}, @$p{qw/period_id round white_position/});
+				if ($p->{results} == 5) {
+					if ($p->{black_wins} > $p->{white_wins}) {
+						$p->{winner_position} = $p->{black_position};
+						$p->{loser_position} = $p->{white_position};
+					} elsif ($p->{white_wins} > $p->{black_wins}) {
+						$p->{winner_position} = $p->{white_position};
+						$p->{loser_position} = $p->{black_position};
+					} else {
+						$p->{black_top_board_result} = $c->db_selectone("SELECT result FROM brawldraw_results WHERE result != 0 AND clanperiod=? AND round=? AND position=? ORDER BY seat LIMIT 1", {}, @$p{qw/period_id round black_position/});
+						if ($p->{black_top_board_result} == 1) {
+							$p->{winner_position} = $p->{black_position};
+							$p->{loser_position} = $p->{white_position};
+						} else {
+							$p->{winner_position} = $p->{white_position};
+							$p->{loser_position} = $p->{black_position};
+						}
+					}
+				}
+			}
+		}
+		if ($p->{winner_position}) {
+			$c->db_do("UPDATE brawldraw SET result=1 WHERE clanperiod=? AND round=? AND position=?", {}, @$p{qw/period_id round winner_position/});
+			$c->db_do("UPDATE brawldraw SET result=-1 WHERE clanperiod=? AND round=? AND position=?", {}, @$p{qw/period_id round loser_position/});
+			return (1, "Added game and inferred final result");
+		}
+		return (1, "Added game");
 	},
 },
 add_clan_member => {
@@ -614,6 +847,11 @@ add_clan_member => {
 		},
 		clan_id => {
 			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
 		},
 		member_kgs => {
 			type => 'valid_new|name_kgs($period_id)',
@@ -660,6 +898,11 @@ add_private_clan_forum => {
 		},
 		clan_id => {
 			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {
@@ -765,6 +1008,11 @@ add_clan_brawl_team => {
 		clan_id => {
 			type => 'id_clan($period_id)',
 		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
 		team_name => {
 			type => 'valid_new|name_brawlteam($period_id,$clan_id)',
 			description => 'All brawl teams are now required to have a name. If you can\'t think of one, suggested names are variations along the themes of "Warriors", "Crushers" or "Hamsters".',
@@ -772,6 +1020,10 @@ add_clan_brawl_team => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
+		$p->{draw_made} = $c->db_selectone("SELECT COUNT(*) FROM brawldraw WHERE clanperiod = ?", {}, $p->{period_id});
+		if ($p->{draw_made}) {
+			return (0, "Sorry, operation unavailable after draw has been made.");
+		}
 		$p->{existing_teams} = $c->db_selectone("SELECT COUNT(*) FROM brawl_teams WHERE clan_id = ?", {}, $p->{clan_id});
 		my @requirements = split /,/, $c->get_option('BRAWLTEAMPOINTS');
 		$p->{points_required} = $requirements[$p->{existing_teams}];
@@ -818,6 +1070,10 @@ change_clan_brawl_team_order => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
+		$p->{draw_made} = $c->db_selectone("SELECT COUNT(*) FROM brawldraw WHERE clanperiod = ?", {}, $p->{period_id});
+		if ($p->{draw_made}) {
+			return (0, "Sorry, operation unavailable after draw has been made.");
+		}
 		$p->{old_number} = $c->db_selectone("SELECT team_number FROM brawl_teams WHERE team_id = ?", {}, $p->{team_id});
 		$p->{new_number} = $p->{old_number} + ($p->{updown} eq 'Down' ? 1 : -1);
 		$p->{total_teams} = $c->db_selectone("SELECT COUNT(*) FROM brawl_teams WHERE clan_id = ?", {}, $p->{clan_id});
@@ -901,6 +1157,10 @@ remove_clan_brawl_team => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
+		$p->{draw_made} = $c->db_selectone("SELECT COUNT(*) FROM brawldraw WHERE clanperiod = ?", {}, $p->{period_id});
+		if ($p->{draw_made}) {
+			return (0, "Sorry, operation unavailable after draw has been made.");
+		}
 		# Splat members and stuff first.
 		$c->db_do('DELETE FROM brawl_team_members WHERE team_id=?', {}, $p->{team_id});
 		$c->db_do('DELETE FROM brawl WHERE team_id=?', {}, $p->{team_id});
@@ -947,15 +1207,23 @@ remove_member_from_brawl => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
+		$p->{draw_made} = $c->db_selectone("SELECT COUNT(*) FROM brawldraw WHERE clanperiod = ?", {}, $p->{period_id});
+		if ($p->{draw_made}) {
+			return (0, "Sorry, operation unavailable after draw has been made.");
+		}
 		# All sensible checking is already done...
 		if ($p->{member_id}) {
-			if (!$c->db_do('DELETE FROM brawl_team_members WHERE member_id = ?', {}, $p->{member_id})) {
+			if (!$c->db_do('DELETE FROM brawl WHERE member_id = ?', {}, $p->{member_id})) {
+				return (0, "Database error.");
+			} elsif (!$c->db_do('DELETE FROM brawl_team_members WHERE member_id = ?', {}, $p->{member_id})) {
 				return (0, "Database error.");
 			} else {
 				return (1, "Removed member from brawl team.");
 			}
 		} else {
-			if (!$c->db_do('DELETE FROM brawl_team_members WHERE team_id = ?', {}, $p->{team_id})) {
+			if (!$c->db_do('DELETE FROM brawl WHERE team_id = ?', {}, $p->{team_id})) {
+				return (0, "Database error.");
+			} elsif (!$c->db_do('DELETE FROM brawl_team_members WHERE team_id = ?', {}, $p->{team_id})) {
 				return (0, "Database error.");
 			} else {
 				return (1, "Removed members from brawl team.");
@@ -999,6 +1267,10 @@ add_member_to_brawl => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
+		$p->{team_draw_made} = $c->db_selectone("SELECT COUNT(*) FROM brawldraw INNER JOIN brawldraw_results ON brawldraw.clanperiod = brawldraw_results.clanperiod AND brawldraw.round = brawldraw_results.round AND brawldraw.position = brawldraw_results.position WHERE brawldraw.clanperiod = ? AND brawldraw.team_id = ?", {}, $p->{period_id}, $p->{team_id});
+		if ($p->{team_draw_made}) {
+			return (0, "Sorry, operation unavailable after draw has been made.");
+		}
 		$c->db_do('DELETE FROM brawl_team_members WHERE member_id = ?', {}, $p->{member_id});
 		$p->{req_points} = $c->get_option('BRAWLMEMBERPOINTS', $p->{period_id});
 		$p->{current_points} = $c->db_selectone('SELECT played + played_pure FROM members WHERE id = ?', {}, $p->{member_id}) || 0;
