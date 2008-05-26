@@ -685,12 +685,12 @@ add_brawl_game => {
 			brief => 'Game URL',
 			description => 'Link to the game at the KGS archives',
 		},
-		invert => {
+		oinvert => {
 			type => 'boolean',
 			override => 1,
 			brief => 'Force acceptance of inverted colours',
 		},
-		nr => {
+		onr => {
 			type => 'boolean',
 			override => 1,
 			brief => 'Force acceptance of NR/Jigo',
@@ -699,6 +699,11 @@ add_brawl_game => {
 			type => 'boolean',
 			override => 1,
 			brief => 'Force acceptance of bad rules',
+		},
+		oreplace => {
+			type => 'boolean',
+			override => 1,
+			brief => 'Force replacing existing game',
 		},
 	],
 	action => sub {
@@ -776,7 +781,18 @@ add_brawl_game => {
 			return (0, "Could not find player's info in system.");
 		}
 
-		my $match = $c->db_select("SELECT d1.round, d1.position, d1.seat, d1.is_black FROM brawldraw_results d1 INNER JOIN brawldraw_results d2 ON d1.clanperiod = d2.clanperiod AND d1.round = d2.round AND FLOOR(d1.position/2) = FLOOR(d2.position/2) AND d1.seat = d2.seat WHERE d1.clanperiod = ? AND d1.member_id = ? AND d2.member_id = ?", {}, @$p{qw/period_id black_id white_id/});
+		$p->{black_clan} = $c->db_selectone("SELECT clan_id FROM members WHERE id = ?", {}, $p->{black_id});
+		$p->{white_clan} = $c->db_selectone("SELECT clan_id FROM members WHERE id = ?", {}, $p->{white_id});
+
+		if (!$p->{black_clan} || !$p->{white_clan}) {
+			return (0, "Members appear not to be in clans.");
+		}
+
+		if ($p->{black_clan} != $p->{clan_id} && $p->{white_clan} != $p->{clan_id} && !$c->is_admin) {
+			return (0, "This game has nothing to do with your clan...");
+		}
+
+		my $match = $c->db_select("SELECT d1.round, d1.position, d1.seat, d1.is_black, d1.result FROM brawldraw_results d1 INNER JOIN brawldraw_results d2 ON d1.clanperiod = d2.clanperiod AND d1.round = d2.round AND FLOOR(d1.position/2) = FLOOR(d2.position/2) AND d1.seat = d2.seat WHERE d1.clanperiod = ? AND d1.member_id = ? AND d2.member_id = ?", {}, @$p{qw/period_id black_id white_id/});
 
 		if (@$match > 1) {
 			return (0, "Oh dear; there seems to be multiple possible matches for this game.");
@@ -786,10 +802,12 @@ add_brawl_game => {
 
 		$match = $match->[0];
 
-		@$p{qw/round black_position white_position game seat colour_correct/} = (@$match[0,1], $match->[1] + ($match->[1] % 2 ? -1 : 1), int($match->[1]/2), @$match[2,3]);
+		@$p{qw/round black_position white_position game seat colour_correct db_black_result/} = (@$match[0,1], $match->[1] + ($match->[1] % 2 ? -1 : 1), int($match->[1]/2), @$match[2,3]);
 
-		if (!$p->{colour_correct} && !$p->{invert}) {
-			return (0, "Ack! Colours are inverted!", "invert", "Check here to allow the game to pass with inverted colours.");
+		if (!$p->{colour_correct} && !$p->{oinvert}) {
+			return (0, "Ack! Colours are inverted!", "oinvert", "Check here to allow the game to pass with inverted colours.");
+		} elsif (!$p->{db_black_result} && !$p->{oreplace}) {
+			return (0, "A result already exists for this match.", "oreplace", "Check here to allow the game to replace the old one.");
 		}
 
 		# We're ready!
