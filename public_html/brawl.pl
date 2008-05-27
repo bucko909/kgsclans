@@ -13,7 +13,7 @@ my $c = Clans->new;
 $c->header("Clan Brawl");
 
 my $mode = $c->param('mode') || 'overview';
-my @modes = qw/overview prelim main battle team team_current round round_current/;
+my @modes = qw/predraw overview prelim main battle team team_current round round_current/;
 
 $mode = 'overview' unless grep { $_ eq $mode } @modes;
 
@@ -22,7 +22,7 @@ my $periodparam = $c->{context_params} ? "&amp;$c->{context_params}" : "";
 
 print $c->h3("Quick Links");
 
-print qq{<p><a href="brawl.pl?$periodparam">Overview</a> | <a href="brawl.pl?mode=prelim$periodparam">Preliminaries</a> | <a href="brawl.pl?mode=main$periodparam">Main</a> | <a href="brawl.pl?mode=round$periodparam">All battles</a> | <a href="brawl.pl?mode=round_current$periodparam">Current round</a></p>};
+print qq{<p><a href="brawl.pl?mode=predraw$periodparam">Pre-draw</a> | <a href="brawl.pl?$periodparam">Overview</a> | <a href="brawl.pl?mode=prelim$periodparam">Preliminaries</a> | <a href="brawl.pl?mode=main$periodparam">Main</a> | <a href="brawl.pl?mode=round$periodparam">All battles</a> | <a href="brawl.pl?mode=round_current$periodparam">Current round</a></p>};
 
 my $user_clan = $c->db_select("SELECT id, name FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE clanperiod = ? AND forumuser_clans.user_id = ?", {}, $period, $c->{userid});
 if (@$user_clan) {
@@ -104,6 +104,188 @@ if ($mode eq 'overview') {
 			}
 		} else {
 			print "No draw exists for this team."
+		}
+	}
+} elsif ($mode eq 'predraw') {
+	# XXX copy-paste
+	my $p = { period_id => $period };
+
+	# Get a list of team members.
+	my $members = $c->db_select("SELECT brawl.team_id, position, member_id FROM brawl INNER JOIN brawl_teams ON brawl.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ?", {}, $p->{period_id});
+
+	# Sort members into teams.
+	my %team_members;
+	for(@$members) {
+		$team_members{$_->[0]} ||= [];
+		next unless $_->[1] >= 0 && $_->[1] <= 4;
+		$team_members{$_->[0]}[$_->[1]] = $_->[2];
+		$team_members{$_->[0]}[5]++;
+	}
+
+	# This is the first round. First, we must decide if we need to produce a preliminary draw.
+	$p->{req_points} = $c->get_option('BRAWLTEAMPOINTS');
+	my @points = split /,/, $p->{req_points};
+
+	$p->{req_members} = $c->get_option('BRAWLTEAMMINMEMBERS');
+
+	$p->{max_rounds} = $c->get_option('BRAWLROUNDS');
+
+	# Get a list of teams.
+	my $teams = $c->db_select("SELECT brawl_teams.team_id, team_number, clans.points, COUNT(member_id) AS number, clans.id, clans.name, brawl_teams.name FROM brawl_team_members INNER JOIN brawl_teams ON brawl_team_members.team_id = brawl_teams.team_id INNER JOIN clans ON clans.id = brawl_teams.clan_id WHERE clans.clanperiod = ? GROUP BY brawl_teams.team_id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
+
+	# Remove all teams which do not have 5 members.
+	$p->{all_teams} = join ',', map { $_->[0] } @$teams;
+
+	$p->{current_champion} = $c->get_option('BRAWLCHAMPION');
+
+	# For both below cases, we need to know the seed score for each team.
+	for(0..$#$teams) {
+		$teams->[$_][3] = $teams->[$_][2] / $points[$teams->[$_][1]];
+		# The winner of the last brawl is always seeded top.
+		$teams->[$_][3] = 9001 if $teams->[$_][4] == $p->{current_champion} && $teams->[$_][1] == 1;
+	}
+	@$teams = sort { $b->[3] <=> $a->[3] } @$teams;
+	$p->{sorted_teams} = join ',', map { $_->[0] } @$teams;
+
+	# Generate an order mapping, as this is also used in both cases.
+	# We do this by recursively pairing top with bottom on opponent groups.
+	$p->{max_teams} = 2 ** $p->{max_rounds};
+	my @tree = (0 .. $p->{max_teams} - 1);
+	while(@tree > 2) {
+		my @new_tree;
+		for(0 .. @tree / 2 - 1) {
+			if (ref $tree[0]) {
+				# Subsequent swaps
+				push @new_tree, [$tree[$_], $tree[$#tree-$_]];
+			} else {
+				# First swap is reversed to make sure the seeds get even positions and make table render properly.
+				push @new_tree, [$tree[$#tree-$_], $tree[$_]];
+			}
+		}
+		@tree = @new_tree;
+	}
+	# Do a depth first search to pull the tree back apart.
+	my $dfs;
+	$dfs = sub { ref $_[0] ? ($dfs->($_[0][0]), $dfs->($_[0][1])) : $_[0] };
+	my @position_map_inverse = $dfs->(\@tree);
+	my @position_map;
+	$position_map[$position_map_inverse[$_]] = $_ for 0..$#position_map_inverse;
+
+	my (@auto_teams, @fights);
+
+	if (@$teams > $p->{max_teams}) {
+		# We must generate a preliminary round.
+		$p->{this_round} = 0;
+
+		# First, who gets auto entry?
+		$p->{auto_entry} = $c->get_option('BRAWLAUTOENTRY');
+		@auto_teams = splice(@$teams, 0, $p->{auto_entry});
+
+		# Remove any teams which are the second or above from their clan.
+		my $prelim_index = 0;
+		my $moved_something = 1;
+		while($moved_something) {
+			my %clans_hit;
+			$moved_something = 0;
+			for(0..$p->{auto_entry}-1) {
+				my $clan_id = $auto_teams[$_][4];
+				if ($clans_hit{$clan_id} && @$teams > $prelim_index) {
+					# Swap for next preliminary team, assuming there is one.
+					my $temp = $auto_teams[$_];
+					$auto_teams[$_] = $teams->[$prelim_index];
+					$teams->[$prelim_index++] = $temp;
+					$moved_something = 1;
+				} else {
+					$clans_hit{$clan_id} = 1;
+				}
+			}
+			@auto_teams = sort { $b->[3] <=> $a->[3] } @auto_teams;
+			@$teams = sort { $b->[3] <=> $a->[3] } @$teams;
+		}
+		$p->{double_auto_teams} = join ',', map { $_->[0] } @{$teams}[0..$prelim_index-1];
+
+		# Now, the remainder have to duke it out. We solve this with an all-play-all league.
+		$p->{remain_slots} = $p->{max_teams} - $p->{auto_entry};
+		$p->{min_opponents} = int(@$teams/$p->{remain_slots}) - 1; # >= 1 by if condition
+		$p->{teams_on_min} = $p->{remain_slots} - (@$teams % $p->{remain_slots});
+
+		if ($p->{min_opponents} == 0) {
+			# In this case, at least one team gets in free. Bung 'em all on auto_teams.
+			push @auto_teams, splice(@$teams, 0, $p->{teams_on_min});
+			$p->{remain_slots} -= $p->{teams_on_min};
+			$p->{teams_on_min} = @$teams;
+			$p->{min_opponents} = 1;
+		}
+
+		# There may be some teams in the preliminary round which have no lineup. If this is the case, we cull them now, one by one.
+		{
+			my @culled = ();
+			while(1) {
+				my @cull = grep { !$team_members{$teams->[$_][0]} || $team_members{$teams->[$_][0]}[5] != 5 } (0..$#$teams);
+				if (@cull) {
+					my $cull_idx = $cull[$#cull];
+					push @culled, $teams->[$cull_idx];
+					splice(@$teams, $cull_idx, 1);
+					$p->{teams_on_min}++;
+					if ($p->{teams_on_min} == $p->{remain_slots} + 1) {
+						if ($p->{min_opponents} == 1) {
+							push @auto_teams, shift @$teams;
+							# Here, the following two are equal.
+							$p->{teams_on_min}--;
+							$p->{remain_slots}--;
+						} else {
+							$p->{teams_on_min} = 1;
+							$p->{min_opponents}--;
+						}
+					}
+				} else {
+					last;
+				}
+			}
+			$p->{cull_teams} = join ',', map { $_->[0] } @culled;
+		}
+
+		$p->{auto_teams} = join ',', map { $_->[0] } @auto_teams;
+		$p->{preliminary_teams} = join ',', map { $_->[0] } @$teams;
+
+		# Now we have a list of teams which need to be blocked together. We this by grouping the teams as follows:
+		# 1 3 5  8
+		# 2 4 6  9
+		#     7 10
+		@fights;
+		{
+			my $pos = 0;
+			for my $slot_num (0..$p->{remain_slots}-1) {
+				my $num_opponents = $p->{min_opponents} + ($slot_num > $p->{teams_on_min} ? 1 : 0);
+				$fights[$slot_num] = [];
+				for my $opp_num (1..$num_opponents) {
+					push @{$fights[$slot_num]}, $teams->[$pos++];
+				}
+			}
+		}
+	} else {
+		@auto_teams = @$teams;
+	}
+
+	print $c->h3("Preliminary round data");
+
+	print $c->h4("Automatically qualified");
+	if (@auto_teams) {
+		print "<ul>";
+		print "<li>$_->[6] (".$c->render_clan(@$_[4,5]).")</li>" for @auto_teams;
+		print "</ul>";
+	} else {
+		print $c->p("No teams automatically qualified.");
+	}
+
+	if (@fights) {
+		my $group_no = 1;
+		for (@fights) {
+			print $c->h4("Group $group_no");
+			$group_no++;
+			print "<ul>";
+			print "<li>$_->[6] (".$c->render_clan(@$_[4,5]).")</li>" for @$_;
+			print "</ul>";
 		}
 	}
 } else {

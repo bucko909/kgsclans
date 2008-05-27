@@ -21,6 +21,7 @@ brawl_draw => {
 		# - Asked to produce a first round and a preliminary round is needed.
 		# - Asked to produce the first round after preliminaries.
 		# - Asked to produce any other round.
+		# TODO (doesn't really matter, but...) period_id is ignored in get_option calls
 
 		# First, let's see if this will be the first round of any kind.
 		my $draw_made = $c->db_selectone("SELECT brawldraw.team_id FROM brawldraw INNER JOIN brawl_teams ON brawldraw.team_id = brawl_teams.team_id INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ?", {}, $p->{period_id});
