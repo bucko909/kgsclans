@@ -124,6 +124,12 @@ if ($mode eq 'overview') {
 
 	# This is the first round. First, we must decide if we need to produce a preliminary draw.
 	$p->{req_points} = $c->get_option('BRAWLTEAMPOINTS');
+	if (!$p->{req_points}) {
+		print "<h3>Error</h3>";
+		print $c->p("This period was before the automatic brawl draw process.");
+		$c->footer;
+		exit 0;
+	}
 	my @points = split /,/, $p->{req_points};
 
 	$p->{req_members} = $c->get_option('BRAWLTEAMMINMEMBERS');
@@ -252,7 +258,6 @@ if ($mode eq 'overview') {
 		# 1 3 5  8
 		# 2 4 6  9
 		#     7 10
-		@fights;
 		{
 			my $pos = 0;
 			for my $slot_num (0..$p->{remain_slots}-1) {
