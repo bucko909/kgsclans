@@ -364,6 +364,10 @@ sub brawl_battle {
 	}
 	$output .= qq|</tr><tr>|;
 	for my $member (@top) {
+		if (!$member) {
+			$output .= qq|<td></td>|;
+			next;
+		}
 		my $class;
 		if ($member->[5]) {
 			$class = "player_black";
@@ -395,6 +399,10 @@ sub brawl_battle {
 	}
 	$output .= qq|</tr><tr>|;
 	for my $member (@bottom) {
+		if (!$member) {
+			$output .= qq|<td></td>|;
+			next;
+		}
 		my $class;
 		if ($member->[5]) {
 			$class = "player_black";
