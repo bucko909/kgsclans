@@ -24,7 +24,7 @@ print $c->h3("Quick Links");
 
 print qq{<p><a href="brawl.pl?$periodparam">Overview</a> | <a href="brawl.pl?mode=prelim$periodparam">Preliminaries</a> | <a href="brawl.pl?mode=main$periodparam">Main</a> | <a href="brawl.pl?mode=round$periodparam">All battles</a> | <a href="brawl.pl?mode=round_current$periodparam">Current round</a></p>};
 
-my $user_clan = $c->db_select("SELECT id, name FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE forumuser_clans.user_id = ?", {}, $c->{userid});
+my $user_clan = $c->db_select("SELECT id, name FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE clanperiod = ? AND forumuser_clans.user_id = ?", {}, $period, $c->{userid});
 if (@$user_clan) {
 	my $clan_teams = $c->db_select("SELECT team_id, name FROM brawl_teams WHERE clan_id = ? ORDER BY team_number", {}, $user_clan->[0][0]);
 	if (@$clan_teams) {
