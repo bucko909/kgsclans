@@ -18,7 +18,7 @@ my @modes = qw/overview prelim main battle team team_current round round_current
 $mode = 'overview' unless grep { $_ eq $mode } @modes;
 
 my $period = $c->period_info()->{id};
-my $periodparam = $c->param('period') ? "&amp;period=$period" : "";
+my $periodparam = $c->{context_params} ? "&amp;$c->{context_params}" : "";
 
 print $c->h3("Quick Links");
 
@@ -343,7 +343,7 @@ sub brawl_battle {
 		} else {
 			$bottom[$_->[1]] = $_;
 		}
-		$urls[$_->[1]] = $_->[7];
+		$urls[$_->[1]] = $_->[7] if $_->[7];
 	}
 
 	# If we get here we know it's a fight between two teams.

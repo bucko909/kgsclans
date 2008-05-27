@@ -240,6 +240,24 @@ sub member_info {
 	return;
 }
 
+sub team_info {
+	my ($this, $team_id) = @_;
+	$this->{team_cache} ||= {};
+	return $this->{team_cache}{$team_id} if exists $this->{team_cache}{$team_id};
+	my @rows = qw/team_id clan_id name/;
+	my $rows = join ',', @rows;
+	my $stuff = $this->db_selectrow("SELECT $rows FROM brawl_teams WHERE team_id = ?", {}, $team_id);
+	if ($stuff) {
+		my $team = {};
+		$team->{$rows[$_]} = $stuff->[$_] for(0..$#rows);
+		$team->{id} = $team->{team_id};
+		$this->{team_cache}{$team_id} = $team;
+		return $team;
+	}
+	$this->{team_cache}{$team_id} = undef;
+	return;
+}
+
 sub read_common_params {
 	my ($this) = @_;
 	if (my $member_id = $this->param('member')) {
@@ -248,6 +266,16 @@ sub read_common_params {
 			$this->die_fatal_badinput("Nonexistent member specified");
 		}
 		$this->{context_params} = "member=$stuff->{id}";
+		$this->{member_info} = $stuff;
+		$this->{clan_info} = $this->clan_info($stuff->{clan_id});
+		$this->{period_info} = $this->period_info($this->{clan_info}{clanperiod});
+		$this->{period_cache}{this} = $this->{period_info};
+	} elsif (my $team_id = $this->param('team')) {
+		my $stuff = $this->team_info($team_id);
+		if (!$stuff) {
+			$this->die_fatal_badinput("Nonexistent team specified");
+		}
+		$this->{context_params} = "team=$stuff->{id}";
 		$this->{member_info} = $stuff;
 		$this->{clan_info} = $this->clan_info($stuff->{clan_id});
 		$this->{period_info} = $this->period_info($this->{clan_info}{clanperiod});
