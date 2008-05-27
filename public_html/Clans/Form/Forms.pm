@@ -118,7 +118,7 @@ brawl_draw => {
 
 			# For both below cases, we need to know the seed score for each team.
 			for(0..$#$teams) {
-				$teams->[$_][3] = $teams->[$_][2] / $points[$teams->[$_][1]];
+				$teams->[$_][3] = $teams->[$_][2] / $points[$teams->[$_][1]-1];
 				# The winner of the last brawl is always seeded top.
 				$teams->[$_][3] = 9001 if $teams->[$_][4] == $p->{current_champion} && $teams->[$_][1] == 1;
 			}
