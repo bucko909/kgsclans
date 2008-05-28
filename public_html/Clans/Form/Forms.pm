@@ -426,7 +426,7 @@ add_page => {
 		based_on => {
 			type => 'name_page($period_id)',
 			brief => 'Template',
-			readonly => undef,
+			readonly => [ ],
 		},
 		content => {
 			type => 'content_page($period_id,$based_on)',
