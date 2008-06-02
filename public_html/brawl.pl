@@ -274,6 +274,8 @@ if ($mode eq 'overview') {
 
 	print $c->h3("Preliminary round data");
 
+	print $c->p("If the draw were made right now, this would be the result.");
+
 	print $c->h4("Automatically qualified");
 	if (@auto_teams) {
 		print "<ul>";

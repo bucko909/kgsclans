@@ -1007,7 +1007,7 @@ remove_clan_member => {
 				return (1, "Removed member from clan!.");
 			}
 		} else {
-			if (!$c->db_do('DELETE FROM aliases WHERE member_id=?', {}, $p->{member_id})) {
+			if (!$c->db_do('DELETE FROM aliases WHERE member_id=?', {}, $p->{member_id}) || !$c->db_do('UPDATE members SET active=0 WHERE id=?', {}, $p->{member_id})) {
 				return (0, "Database error.");
 			} else {
 				return (1, "Member had played games, hence only removed KGS user names.");
