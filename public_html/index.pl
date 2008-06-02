@@ -104,28 +104,39 @@ BEGIN {
 			data => sub { $_[0] ? $c->render_member(@_[0,1,2]) : "" },
 		},
 		cmf => { # clan_members_full => {
-			sqlcols => [qw/COUNT(mall.id) COUNT(mact.id)/],
-			title => "Members (Active)",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id", "LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.played > 0 AND mact.id = mall.id" ],
-			init => sub { $persist{mall} = 0; $persist{mact} = 0; },
-			data => sub { $persist{mall} += $_[0]; $persist{mact} += $_[1]; "$_[0] ($_[1])" },
-			totdata => sub { "$persist{mall} ($persist{mact})" },
+			sqlcols => [qw/COUNT(mact.id) COUNT(mqual.id)/],
+			title => "Members (Qualified)",
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+				"LEFT OUTER JOIN members mqual ON mqual.clan_id = clans.id AND mqual.played + mqual.played_pure >= 7 AND mqual.id = mact.id AND mqual.active = 1",
+			],
+			init => sub { $persist{mall} = 0; $persist{mqual} = 0; },
+			data => sub { $persist{mall} += $_[0]; $persist{mqual} += $_[1]; "$_[0] ($_[1])" },
+			totdata => sub { "$persist{mall} ($persist{mqual})" },
 		},
 		cm => { # clan_members => {
-			sqlcols => [qw/COUNT(mall.id)/],
+			sqlcols => [qw/COUNT(mact.id)/],
 			title => "Members",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+			],
 			init => sub { $persist{mall1} = 0 },
 			data => sub { $persist{mall1} += $_[0]; $_[0] },
 			totdata => sub { $persist{mall1} },
 		},
 		cma => { # clan_members_active => {
-			sqlcols => [qw/COUNT(mact.id)/],
-			title => "Active Members",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id", "LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.played > 0 AND mact.id = mall.id" ],
-			init => sub { $persist{mact1} = 0 },
-			data => sub { $persist{mact1} += $_[0]; $_[0] },
-			totdata => sub { $persist{mact1} },
+			sqlcols => [qw/COUNT(mqual.id)/],
+			title => "Qualified Members",
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+				"LEFT OUTER JOIN members mqual ON mqual.clan_id = clans.id AND mqual.played + mqual.played_pure >= 7 AND mqual.id = mact.id AND mqual.active = 1",
+			],
+			init => sub { $persist{mqual1} = 0 },
+			data => sub { $persist{mqual1} += $_[0]; $_[0] },
+			totdata => sub { $persist{mqual1} },
 		},
 		cp => { # clan_played_full => {
 			sqlcols => [qw/points/],
@@ -137,7 +148,9 @@ BEGIN {
 		cpf => { # clan_played_full => {
 			sqlcols => [qw/SUM(mall.played) SUM(mall.played_pure)/],
 			title => "Games (Pure)",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			init => sub { $persist{pall} = 0; $persist{ppure} = 0; },
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{pall} += $_[0]; $persist{ppure} += $_[1]; "$_[0] ($_[1])" },
 			totdata => sub { my $pure = $persist{ppure} / 2; ($persist{pall} - $pure)." ($pure)" },
@@ -145,7 +158,9 @@ BEGIN {
 		cpa => { # clan_played_all => {
 			sqlcols => [qw/SUM(mall.played) SUM(mall.played_pure)/], # Pure needed for correction
 			title => "Games",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			init => sub { $persist{pall2} = 0; $persist{ppure2} = 0; },
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{pall2} += $_[0]; $persist{ppure2} += $_[1]; "$_[0]" },
 			totdata => sub { my $pure = $persist{ppure2} / 2; $persist{pall2} - $pure },
@@ -153,7 +168,9 @@ BEGIN {
 		cpp => { # clan_played_pure => {
 			sqlcols => [qw/SUM(mall.played_pure)/],
 			title => "Pure Games",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			init => sub { $persist{ppure1} = 0; },
 			data => sub { $_[0] ||= 0; $persist{ppure1} += $_[0]; "$_[0]" },
 			totdata => sub { $persist{ppure1} / 2 },
@@ -161,55 +178,62 @@ BEGIN {
 		cpaf => { # clan_played_average_full => {
 			sqlcols => [qw|SUM(mact.played)/COUNT(mact.id) SUM(mact.played_pure)/COUNT(mact.id)|],
 			title => "Games per Active Member (Pure)",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
-			init => sub { $persist{ppmall} = 0; $persist{ppmpure} = 0; },
-			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{ppmall} += $_[0]; $persist{ppmpure} += $_[1]; sprintf("%0.2f (%0.2f)", $_[0], $_[1]) },
-			totdata => sub { my $pure = $persist{ppmpure} / 2; sprintf("%0.2f (%0.2f)", $persist{ppmall} - $pure, $pure) },
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+			],
+			data => sub { $_[0] ||= 0; $_[1] ||= 0; sprintf("%0.2f (%0.2f)", $_[0], $_[1]) },
 		},
 		cpaa => { # clan_played_average_all => {
 			sqlcols => [qw|SUM(mact.played)/COUNT(mact.id) SUM(mact.played_pure)/COUNT(mact.id)|],
 			title => "Games per Active Member",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
-			init => sub { $persist{ppmall2} = 0; $persist{ppmpure2} = 0; },
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+			],
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{ppmall2} += $_[0]; $persist{ppmpure2} += $_[1]; sprintf("%0.2f", $_[0]) },
-			totdata => sub { my $pure = $persist{ppmpure} / 2; sprintf("%0.2f", $persist{ppmall2} - $pure) },
 		},
 		cpap => { # clan_played_average_pure => {
 			sqlcols => [qw|SUM(mact.played_pure)/COUNT(mact.id)|],
 			title => "Pure Games per Active Member",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
-			init => sub { $persist{ppmpure1} = 0; },
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+			],
 			data => sub { $_[0] ||= 0; $persist{ppmpure1} += $_[0]; sprintf("%0.2f", $_[0]) },
-			totdata => sub { sprintf("%0.2f", $persist{ppmpure1} / 2) },
 		},
-		cpaaf => { # clan_played_act_average_full => {
-			sqlcols => [qw|SUM(mact.played)/COUNT(mact.id) SUM(mact.played_pure)/COUNT(mact.id)|],
-			title => "Games per Active Member (Pure)",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id", "LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.played > 0 AND mact.id = mall.id" ],
-			init => sub { $persist{ppmall} = 0; $persist{ppmpure} = 0; },
+		cpqaf => { # clan_played_act_average_full => {
+			sqlcols => [qw|SUM(mqual.played)/COUNT(mqual.id) SUM(mqual.played_pure)/COUNT(mqual.id)|],
+			title => "Games per Qualified Member (Pure)",
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+				"LEFT OUTER JOIN members mqual ON mqual.clan_id = clans.id AND mqual.played + mqual.played_pure >= 7 AND mqual.id = mact.id AND mqual.active = 1",
+			],
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{ppmall} += $_[0]; $persist{ppmpure} += $_[1]; sprintf("%0.2f (%0.2f)", $_[0], $_[1]) },
-			totdata => sub { my $pure = $persist{ppmpure} / 2; sprintf("%0.2f (%0.2f)", $persist{ppmall} - $pure, $pure) },
 		},
-		cpaaa => { # clan_played_act_average_all => {
-			sqlcols => [qw|SUM(mact.played)/COUNT(mact.id) SUM(mact.played_pure)/COUNT(mact.id)|],
-			title => "Games per Active Member",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id", "LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.played > 0 AND mact.id = mall.id" ],
-			init => sub { $persist{ppmall2} = 0; $persist{ppmpure2} = 0; },
+		cpqaa => { # clan_played_act_average_all => {
+			sqlcols => [qw|SUM(mqual.played)/COUNT(mqual.id) SUM(mqual.played_pure)/COUNT(mqual.id)|],
+			title => "Games per Qualified Member",
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+				" LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1 AND mact.id = mall.id",
+				"LEFT OUTER JOIN members mqual ON mqual.clan_id = clans.id AND mqual.played + mqual.played_pure >= 7 AND mqual.id = mact.id AND mqual.active = 1",
+			],
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{ppmall2} += $_[0]; $persist{ppmpure2} += $_[1]; sprintf("%0.2f", $_[0]) },
-			totdata => sub { my $pure = $persist{ppmpure} / 2; sprintf("%0.2f", $persist{ppmall2} - $pure) },
 		},
-		cpaap => { # clan_played_act_average_pure => {
+		cpqap => { # clan_played_act_average_pure => {
 			sqlcols => [qw|SUM(mact.played_pure)/COUNT(mact.id)|],
-			title => "Pure Games per Active Member",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id", "LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.played > 0 AND mact.id = mall.id" ],
-			init => sub { $persist{ppmpure1} = 0; },
+			title => "Pure Games per Qualified Member",
+			joins => [ " LEFT OUTER JOIN members mact ON mact.clan_id = clans.id AND mact.active = 1", "LEFT OUTER JOIN members mqual ON mqual.clan_id = clans.id AND mqual.played + mqual.played_pure >= 7 AND mqual.id = mact.id AND mqual.active = 1" ],
 			data => sub { $_[0] ||= 0; $persist{ppmpure1} += $_[0]; sprintf("%0.2f", $_[0]) },
-			totdata => sub { sprintf("%0.2f", $persist{ppmpure1} / 2) },
 		},
 		cwf => { # clan_won_full => {
 			sqlcols => [qw/SUM(mall.won) SUM(mall.won_pure)/],
 			title => "Games Won (Pure)",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			init => sub { $persist{wall} = 0; $persist{wpure} = 0; },
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{wall} += $_[0]; $persist{wpure} += $_[1]; "$_[0] ($_[1])" },
 			totdata => sub { $persist{wall} - $persist{wpure} },
@@ -217,7 +241,9 @@ BEGIN {
 		cwa => { # clan_won_all => {
 			sqlcols => [qw/SUM(mall.won) SUM(mall.won_pure)/],
 			title => "Games Won",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			init => sub { $persist{wall2} = 0; $persist{wpure2} = 0; },
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{wall2} += $_[0]; $persist{wpure2} += $_[1]; "$_[0]" },
 			totdata => sub { $persist{wall2} - $persist{wpure} },
@@ -225,7 +251,9 @@ BEGIN {
 		cwp => { # clan_won_pure => {
 			sqlcols => [qw/SUM(mall.won_pure)/],
 			title => "Pure Games Won",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			init => sub { $persist{wpure1} = 0; },
 			data => sub { $_[0] ||= 0; $persist{wpure1} += $_[0]; "$_[0]" },
 			totdata => sub { "" },
@@ -233,7 +261,9 @@ BEGIN {
 		cwpf => { # clan_win_percentage_full
 			sqlcols => [qw#SUM(mall.won) SUM(mall.played) SUM(mall.won_pure) SUM(mall.played_pure) SUM(mall.won)/SUM(mall.played)#],
 			title => "Games Won (Pure)",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			sort => 4,
 			#sort => sub { ($b->[$_[1]] ? ($a->[$_[1]] ? $b->[$_[0]] / $b->[$_[1]] <=> $a->[$_[0]] / $a->[$_[1]] : -1) : 1) },
 			init => sub { $persist{wpall} = 0; $persist{wppure} = 0; $persist{ppall} = 0; $persist{pppure} = 0; },
@@ -243,7 +273,9 @@ BEGIN {
 		cwpa => { # clan_win_percentage_all
 			sqlcols => [qw#SUM(mall.won) SUM(mall.played) SUM(mall.won_pure) SUM(mall.played_pure) SUM(mall.won)/SUM(mall.played)#],
 			title => "Games Won",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			sort => 4,
 			#sort => sub { ($b->[$_[1]] ? ($a->[$_[1]] ? $b->[$_[0]] / $b->[$_[1]] <=> $a->[$_[0]] / $a->[$_[1]] : -1) : 1) },
 			init => sub { $persist{wpall2} = 0; $persist{wppure2} = 0; $persist{ppall2} = 0; $persist{pppure2} = 0; },
@@ -253,7 +285,9 @@ BEGIN {
 		cwpp => { # clan_win_percentage_pure
 			sqlcols => [qw#SUM(mall.won_pure) SUM(mall.played_pure) SUM(mall.won_pure)/SUM(mall.played_pure)#],
 			title => "Pure Games Won",
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id" ],
+			joins => [
+				"  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			],
 			sort => 2,
 			#sort => sub { ($b->[$_[1]] ? ($a->[$_[1]] ? $b->[$_[0]] / $b->[$_[1]] <=> $a->[$_[0]] / $a->[$_[1]] : -1) : 1) },
 			data => sub { sprintf("%0.2d%%", $_[1] ? $_[0] * 100 / $_[1] : 0) },
@@ -451,7 +485,7 @@ sub period_clantable {
 		%TABLEROWS,
 		ROWINIT => {
 			sqlcols => [qw/clans.got100time/],
-			joins => [ " LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
+			joins => [ "  LEFT OUTER JOIN members mall ON mall.clan_id = clans.id",
 			           "LEFT OUTER JOIN members ON clans.leader_id = members.id" ], # Ensure this happens
 			init => sub { },
 			class => sub { $_[0] ? " class=\"qualified\"" : "" },

@@ -888,13 +888,12 @@ add_clan_member => {
 		my ($c, $p) = @_;
 
 		$p->{max_members} = $c->get_option('MEMBERMAX', $p->{period_id});
-		my $currentmembers_list = $c->db_select('SELECT members.id FROM members INNER JOIN aliases ON members.id = aliases.member_id WHERE members.clan_id = ? GROUP BY members.id', {}, $p->{clan_id}); ## Hax
-		$p->{current_members} = @$currentmembers_list;
+		$p->{current_members} = $c->db_selectone('SELECT COUNT(members.id) FROM members WHERE members.clan_id = ? AND members.active = 1', {}, $p->{clan_id});
 		if ($p->{current_members} >= $p->{max_members}) {
 			return (0, "Sorry, your clan has too many members.");
 		}
 
-		if (!$c->db_do('INSERT INTO members SET name=?, clan_id=?', {}, $p->{member_name}, $p->{clan_id})) {
+		if (!$c->db_do('INSERT INTO members SET name=?, clan_id=?, active=1', {}, $p->{member_name}, $p->{clan_id})) {
 			return (0, "Database error.");
 		}
 
@@ -1487,9 +1486,20 @@ add_member_alias => {
 		my ($c, $p) = @_;
 
 		$p->{time} = time();
+		$p->{was_active} = $c->db_selectone('SELECT active FROM members WHERE id=?', {}, $p->{member_id});
+		$p->{max_members} = $c->get_option('MEMBERMAX', $p->{period_id});
+		$p->{current_members} = $c->db_selectone('SELECT COUNT(members.id) FROM members WHERE members.clan_id = ? AND members.active = 1', {}, $p->{clan_id});
+		if (!$p->{was_active} && ($p->{current_members} >= $p->{max_members})) {
+			return (0, "Sorry, but activating that members would put your clan over the maximum number of members.");
+		}
 		if (!$c->db_do('INSERT INTO aliases SET nick=?, member_id=?, clanperiod=?, activity=?', {}, $p->{member_alias}, $p->{member_id}, $p->{period_id}, $p->{time})) {
 			return (0, "Database error.");
 		} else {
+			if (!$p->{was_active}) {
+				if (!$c->db_do('UPDATE members SET active=1 WHERE id=?', {}, $p->{member_id})) {
+					return (0, "Database error setting active status.");
+				}
+			}
 			return (1, "Added KGS username.");
 		}
 	},
@@ -1529,6 +1539,11 @@ remove_member_alias => {
 		if (!$c->db_do('DELETE FROM aliases WHERE id=? AND member_id=?', {}, $p->{alias_id}, $p->{member_id})) {
 			return (0, "Database error.");
 		} else {
+			if (!$c->db_selectone('SELECT COUNT(*) FROM aliases WHERE member_id=?', {}, $p->{member_id})) {
+				if (!$c->db_do("UPDATE members SET active=0 WHERE id=?", {}, $p->{member_id})) {
+					return (0, "Database error.");
+				}
+			}
 			return (1, "Removed KGS username.");
 		}
 	},

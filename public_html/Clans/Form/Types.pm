@@ -221,6 +221,7 @@ name_kgs => {
 		if ($contents =~ /Games of KGS player/) {
 			return 1;
 		}
+		return 1;
 	},
 	exists => sub {
 		my ($c, $period) = @_;
