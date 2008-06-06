@@ -859,7 +859,7 @@ sub main_format {
 		},
 		ADMINLIST => sub {
 			my $c = $_[0];
-			my $admins = $c->db_select("SELECT username FROM phpbb3_users NATURAL JOIN phpbb3_user_group NATURAL JOIN phpbb3_groups WHERE group_name = ?", {}, "ADMINISTRATORS");
+			my $admins = $c->db_select("SELECT username FROM phpbb3_users INNER JOIN phpbb3_user_group ON phpbb3_users.user_id = phpbb3_user_group.user_id INNER JOIN phpbb3_groups ON phpbb3_groups.group_id = phpbb3_user_group.group_id WHERE group_name = ?", {}, "ADMINISTRATORS");
 			return '<ul>'.(join '', map { "<li>$_->[0]</li>" } @$admins).'</ul>';
 		},
 		USERNAME => sub {
