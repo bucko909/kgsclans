@@ -511,9 +511,12 @@ sub period_topplayers {
 sub membertable {
 	my ($c, $clan, $cols, $sort) = @_;
 	my $clause;
+	my $defcols;
 	if ($clan && $clan eq 'all') {
+		$defcols = 'ma,mpf,mwf,mk,cn';
 		$clause = "clans.clanperiod = ".$c->{period_info}{id};
 	} else {
+		$defcols = 'ma,mpf,mwf,mk';
 		if (!$clan || $clan =~ /[^0-9]/) {
 			if ($c->{clan_info}) {
 				$clause = "members.clan_id = ".$c->{clan_info}{id};
@@ -537,7 +540,7 @@ sub membertable {
 			class => sub { $_[0] + $_[1] >= $reqpoints ? " class=\"qualified\"" : "" },
 		},
 	);
-	my @cols = split /,/, ($c->param('cols') || $cols || 'ma,mpf,mwf');
+	my @cols = split /,/, ($c->param('cols') || $cols || $defcols);
 	&main_drawtable($c, \%clan_members_table, \@cols, $c->param('sort') || $sort || 'ma', "members", $clause);
 }
 
