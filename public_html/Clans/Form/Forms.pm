@@ -808,7 +808,7 @@ add_brawl_game => {
 
 		if (!$p->{colour_correct} && !$p->{oinvert}) {
 			return (0, "Ack! Colours are inverted!", "oinvert", "Check here to allow the game to pass with inverted colours.");
-		} elsif (!$p->{db_black_result} && !$p->{oreplace}) {
+		} elsif ($p->{db_black_result} && !$p->{oreplace}) {
 			return (0, "A result already exists for this match.", "oreplace", "Check here to allow the game to replace the old one.");
 		}
 
