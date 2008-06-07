@@ -213,13 +213,13 @@ if ($mode eq 'overview') {
 		# Now, the remainder have to duke it out. We solve this with an all-play-all league.
 		$p->{remain_slots} = $p->{max_teams} - $p->{auto_entry};
 		$p->{min_opponents} = int(@$teams/$p->{remain_slots}) - 1; # >= 1 by if condition
-		$p->{teams_on_min} = $p->{remain_slots} - (@$teams % $p->{remain_slots});
+		$p->{slots_on_min} = $p->{remain_slots} - (@$teams % $p->{remain_slots});
 
 		if ($p->{min_opponents} == 0) {
 			# In this case, at least one team gets in free. Bung 'em all on auto_teams.
-			push @auto_teams, splice(@$teams, 0, $p->{teams_on_min});
-			$p->{remain_slots} -= $p->{teams_on_min};
-			$p->{teams_on_min} = @$teams;
+			push @auto_teams, splice(@$teams, 0, $p->{slots_on_min});
+			$p->{remain_slots} -= $p->{slots_on_min};
+			$p->{slots_on_min} = @$teams / 2;
 			$p->{min_opponents} = 1;
 		}
 
@@ -232,15 +232,15 @@ if ($mode eq 'overview') {
 					my $cull_idx = $cull[$#cull];
 					push @culled, $teams->[$cull_idx];
 					splice(@$teams, $cull_idx, 1);
-					$p->{teams_on_min}++;
-					if ($p->{teams_on_min} == $p->{remain_slots} + 1) {
+					$p->{slots_on_min}++;
+					if ($p->{slots_on_min} == $p->{remain_slots} + 1) {
 						if ($p->{min_opponents} == 1) {
 							push @auto_teams, shift @$teams;
 							# Here, the following two are equal.
-							$p->{teams_on_min}--;
+							$p->{slots_on_min}--;
 							$p->{remain_slots}--;
 						} else {
-							$p->{teams_on_min} = 1;
+							$p->{slots_on_min} = 1;
 							$p->{min_opponents}--;
 						}
 					}
@@ -261,7 +261,7 @@ if ($mode eq 'overview') {
 		{
 			my $pos = 0;
 			for my $slot_num (0..$p->{remain_slots}-1) {
-				my $num_opponents = $p->{min_opponents} + ($slot_num > $p->{teams_on_min} ? 1 : 0);
+				my $num_opponents = $p->{min_opponents} + ($slot_num > $p->{slots_on_min} ? 2 : 1);
 				$fights[$slot_num] = [];
 				for my $opp_num (1..$num_opponents) {
 					push @{$fights[$slot_num]}, $teams->[$pos++];
