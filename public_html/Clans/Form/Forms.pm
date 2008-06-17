@@ -3,6 +3,43 @@ use strict;
 use warnings;
 
 our %forms = (
+add_period => {
+	brief => 'Add a new period',
+	level => 'admin',
+	category => [ qw/admin/ ],
+	description => 'Produces a new clan period based on another.',
+	params => [
+		period_id => {
+			type => 'id_clanperiod',
+			brief => 'Old period',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		$p->{time} = time();
+
+		if (!$c->db_do("SET \@old_period = ?, \@now_time = ?", {}, $p->{period_id}, $p->{time})) {
+			return (0, "Database error during forum add. Get bucko to fix this; changes were not rolled back!");
+		}
+		my @SQL = (
+			'SELECT @new_period := MAX(id) + 1 FROM clanperiods',
+			'INSERT INTO content (name, clanperiod, revision, content, creator, created, current) SELECT name, @new_period, 1, content, creator, created, 1 FROM content WHERE clanperiod = @old_period AND current = 1;',
+			'INSERT INTO clans (name, regex, tag, url, looking, forum_id, forum_private_id, forum_group_id, forum_leader_group_id, clanperiod, points) SELECT IF(points < 250, CONCAT(name, " (to delete)"), name), regex, tag, url, looking, forum_id, forum_private_id, forum_group_id, forum_leader_group_id, @new_period, 0 FROM clans WHERE clanperiod = @old_period;',
+			'INSERT INTO members (name, clan_id, rank, active) SELECT members.name, c2.id, members.rank, 1 FROM members INNER JOIN clans c1 ON members.clan_id = c1.id AND c1.clanperiod = @old_period INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.clanperiod = @new_period WHERE members.active = 1;',
+			'INSERT INTO aliases (member_id, nick, rank, clanperiod, activity) SELECT m2.id, aliases.nick, aliases.rank, @new_period, @now_time FROM aliases INNER JOIN members m1 ON aliases.member_id = m1.id INNER JOIN clans c1 ON m1.clan_id = c1.id AND c1.clanperiod = @old_period INNER JOIN clans c2 ON c1. tag = c2.tag AND c2.clanperiod = @new_period INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;',
+			'UPDATE clans c2 INNER JOIN clans c1 ON c1.clanperiod = @old_period AND c1.tag = c2.tag INNER JOIN members m1 ON m1.id = c1.leader_id INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id SET c2.leader_id = m2.id WHERE c2.clanperiod = @new_period;',
+			'INSERT INTO options (name, clanperiod, value) SELECT name, @new_period, value FROM options WHERE clanperiod = @old_period;',
+			'INSERT INTO clanperiods (id, startdate, enddate) VALUES (@new_period, @now_time, @now_time + 24*3600*7*13);'
+		);
+		foreach my $SQL (@SQL) {
+			if (!$c->db_do($SQL)) {
+				# Cry. The cleanup here will be terrible horrible.
+				return (0, "Database error during period add. Get bucko to fix this; changes were not rolled back!");
+			}
+		}
+		return (1, 'Successfully added the clan period. Some clans may be tagged "to delete" and must be manually funged for now.');
+	}
+},
 brawl_draw => {
 	brief => 'Produce draw for next round of the brawl',
 	level => 'admin',
