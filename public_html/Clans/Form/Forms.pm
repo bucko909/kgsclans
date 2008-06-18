@@ -40,6 +40,77 @@ add_period => {
 		return (1, 'Successfully added the clan period. Some clans may be tagged "to delete" and must be manually funged for now.');
 	}
 },
+remove_clan => {
+	brief => 'Remove an entire clan',
+	level => 'admin',
+	category => [ qw/admin/ ],
+	description => 'Remove a clan as best as can be afforded by the system.',
+	params => [
+		period_id => {
+			type => 'id_clanperiod',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		# Sanity check - will not remove clans with pure games
+		$p->{num_games} = $c->db_selectone("SELECT SUM(played_pure) FROM members WHERE clan_id = ?", {}, $p->{clan_id});
+
+		$c->db_do('SET @clan_id = ?', {}, $p->{clan_id});
+		my @SQL = (
+			# Safe
+			'DELETE aliases FROM aliases INNER JOIN members ON aliases.member_id = members.id WHERE members.clan_id = @clan_id',
+
+			# Remove only non-pure games.
+			'DELETE games FROM games INNER JOIN members ON (games.black_id = members.id AND games.white_id IS NULL) OR (games.white_id = members.id AND games.black_id IS NULL) WHERE members.clan_id = @clan_id',
+
+			# Remove only members who have not played pure games.
+			'DELETE FROM members WHERE clan_id = @clan_id AND played_pure = 0',
+			'UPDATE members SET active = 0, played = played_pure, won = won_pure WHERE clan_id = @clan_id',
+
+			# Remove forum stuff. First gather some extra information.
+			"SELECT \@leaders_group := group_id FROM phpbb3_groups WHERE group_name = 'Clan Leaders'",
+			'SELECT @group_id := forum_group_id, @leader_group_id := forum_leader_group_id FROM clans WHERE id = @clan_id',
+			'SELECT @leader_forum_user := g1.user_id FROM phpbb3_user_group g1 INNER JOIN phpbb3_user_group g2 ON g1.user_id = g2.user_id WHERE g1.group_id = @leader_group_id AND g2.group_id = @leaders_group',
+
+			# Remove all members from groups.
+			"DELETE FROM phpbb3_user_group WHERE group_id = \@group_id",
+			"DELETE FROM phpbb3_user_group WHERE group_id = \@leader_group_id",
+
+			# Remove voting privileges from leader.
+			"DELETE FROM phpbb3_user_group WHERE group_id = \@leaders_group AND user_id = \@leader_forum_user",
+
+			# Remove group permissions
+			"DELETE FROM phpbb3_acl_groups WHERE group_id = \@leader_group_id",
+			"DELETE FROM phpbb3_acl_groups WHERE group_id = \@group_id",
+
+			# Remove groups
+			'DELETE FROM phpbb3_groups WHERE group_id = @group_id',
+			'DELETE FROM phpbb3_groups WHERE group_id = @leader_group_id',
+
+			$p->{num_games} == 0 ? (
+				'DELETE FROM clans WHERE id = @clan_id',
+			) : (
+				'UPDATE clans SET points = -100, looking = "Disbanded" WHERE id = @clan_id',
+			),
+		);
+		foreach my $SQL (@SQL) {
+			if (!$c->db_do($SQL)) {
+				# Cry. The cleanup here will be terrible horrible.
+				return (0, "Database error during period add. Get bucko to fix this; changes were not rolled back!");
+			}
+		}
+
+		if ($p->{num_games} > 0) {
+			return (1, "Removed all KGS usernames, non-pure games and members without pure games, forum groups and forum voting status. Clan remains intact.");
+		} else {
+			return (1, "OK, removed empty clan.");
+		}
+	},
+},
 brawl_draw => {
 	brief => 'Produce draw for next round of the brawl',
 	level => 'admin',
