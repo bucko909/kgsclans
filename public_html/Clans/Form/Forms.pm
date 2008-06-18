@@ -430,7 +430,7 @@ add_clan => {
 		}
 		$p->{actual_leader_name} = $p->{leader_name} || $p->{leader_kgs};
 		$p->{clan_id} = $c->lastid;
-		if (!$c->db_do('INSERT INTO members SET name=?, clan_id=?;', {}, $p->{actual_leader_name}, $p->{clan_id})) {
+		if (!$c->db_do('INSERT INTO members SET name=?, clan_id=?, active=1;', {}, $p->{actual_leader_name}, $p->{clan_id})) {
 			$c->db_do('DELETE FROM clans WHERE id=?', {}, $p->{clan_id});
 			return (0, "Database error during leader addition.");
 		}
