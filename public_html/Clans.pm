@@ -99,14 +99,14 @@ sub render_team {
 	my $this = shift;
 	if (ref $_[0]) {
 		@_ = ($_[0]{id}, $_[0]{name});
-		my $clan_id = $this->db_selectone("SELECT clan_id FROM brawl_teams WHERE team_id = ?", {}, $_[0]);
+		my $clan_id = $this->db_selectone("SELECT clan_id FROM teams WHERE id = ?", {}, $_[0]);
 		if (!$clan_id) {
 			return "$_[1] (????)";
 		} else {
 			return "$_[1] (".$this->renderclan($clan_id).")";
 		}
 	} elsif (!$_[1]) {
-		my $info = $this->db_selectrow("SELECT clan_id, nane FROM brawl_teams WHERE team_id = ?", {}, $_[0]);
+		my $info = $this->db_selectrow("SELECT clan_id, nane FROM teams WHERE id = ?", {}, $_[0]);
 		if (!$info) {
 			return "????";
 		} else {
@@ -210,7 +210,7 @@ sub clan_info {
 	my ($this, $clan_id) = @_;
 	$this->{clan_cache} ||= {};
 	return $this->{clan_cache}{$clan_id} if exists $this->{clan_cache}{$clan_id};
-	my @rows = qw/id name tag regex leader_id userid tag url looking clanperiod email forum_id forum_group_id forum_leader_group_id forum_private_id/;
+	my @rows = qw/id name tag regex leader_id userid tag url looking period_id email forum_id forum_group_id forum_leader_group_id forum_private_id/;
 	my $rows = join ',', @rows;
 	my $stuff = $this->db_selectrow("SELECT $rows FROM clans WHERE id = ?", {}, $clan_id);
 	if ($stuff) {
@@ -244,13 +244,12 @@ sub team_info {
 	my ($this, $team_id) = @_;
 	$this->{team_cache} ||= {};
 	return $this->{team_cache}{$team_id} if exists $this->{team_cache}{$team_id};
-	my @rows = qw/team_id clan_id name/;
+	my @rows = qw/id clan_id name/;
 	my $rows = join ',', @rows;
-	my $stuff = $this->db_selectrow("SELECT $rows FROM brawl_teams WHERE team_id = ?", {}, $team_id);
+	my $stuff = $this->db_selectrow("SELECT $rows FROM teams WHERE id = ?", {}, $team_id);
 	if ($stuff) {
 		my $team = {};
 		$team->{$rows[$_]} = $stuff->[$_] for(0..$#rows);
-		$team->{id} = $team->{team_id};
 		$this->{team_cache}{$team_id} = $team;
 		return $team;
 	}
@@ -268,7 +267,7 @@ sub read_common_params {
 		$this->{context_params} = "member=$stuff->{id}";
 		$this->{member_info} = $stuff;
 		$this->{clan_info} = $this->clan_info($stuff->{clan_id});
-		$this->{period_info} = $this->period_info($this->{clan_info}{clanperiod});
+		$this->{period_info} = $this->period_info($this->{clan_info}{period_id});
 		$this->{period_cache}{this} = $this->{period_info};
 	} elsif (my $team_id = $this->param('team')) {
 		my $stuff = $this->team_info($team_id);
@@ -278,7 +277,7 @@ sub read_common_params {
 		$this->{context_params} = "team=$stuff->{id}";
 		$this->{member_info} = $stuff;
 		$this->{clan_info} = $this->clan_info($stuff->{clan_id});
-		$this->{period_info} = $this->period_info($this->{clan_info}{clanperiod});
+		$this->{period_info} = $this->period_info($this->{clan_info}{period_id});
 		$this->{period_cache}{this} = $this->{period_info};
 	} elsif (my $clan_id = $this->param('clan')) {
 		my $stuff = $this->clan_info($clan_id);
@@ -287,7 +286,7 @@ sub read_common_params {
 		}
 		$this->{context_params} = "clan=$stuff->{id}";
 		$this->{clan_info} = $stuff;
-		$this->{period_info} = $this->period_info($stuff->{clanperiod});
+		$this->{period_info} = $this->period_info($stuff->{period_id});
 		$this->{period_cache}{this} = $this->{period_info};
 	} else {
 		my $period_id = $this->param('period');
@@ -389,12 +388,12 @@ sub is_clan_member {
 sub get_option {
 	my ($this, $name, $period) = @_;
 	$period ||= $this->{period_info}{id};
-	return $this->db_selectone("SELECT value FROM options WHERE clanperiod = ? AND name = ?", {}, $period, $name);
+	return $this->db_selectone("SELECT value FROM options WHERE period_id = ? AND name = ?", {}, $period, $name);
 }
 
 sub log {
 	my ($this, $action, $status, $message, $params) = @_;
-	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?", {}, $action, $status, $message, $this->{userid});
+	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?, time = ?", {}, $action, $status, $message, $this->{userid}, time());
 	my $id = $this->lastid;
 	for my $param_name (keys %$params) {
 		$this->db_do("INSERT INTO log_params SET log_id = ?, param_name = ?, param_value = ?", {}, $id, $param_name, $params->{$param_name});
@@ -485,6 +484,32 @@ sub list {
 	print "<ul>";
 	print "<li>$_</li>" foreach(@_);
 	print "</ul>"
+}
+
+sub forum_post_or_reply {
+	my ($this, $forum, $topic_title, $title, $content, $uuid, $post_time) = @_;
+	$post_time ||= time();
+	$content =~ s/<a href="(http.*?)">(.*?)<\/a>/\[url=$1\]$2\[\/url\]/g;
+	$content =~ s/<a href="(.*?)">(.*?)<\/a>/\[url=http:\/\/www.kgsclans.co.uk\/$1:$uuid\]$2\[\/url:$uuid\]/g;
+	my $topic = $this->db_selectone("SELECT topic_id FROM phpbb3_topics WHERE forum_id = ? AND topic_poster = 53 AND topic_title = ?", {}, $forum, $topic_title);
+	my $new;
+	if (!$topic) {
+		$topic = $this->forum_new_thread($forum, $topic_title, $post_time);
+		$new = 1;
+	}
+	$this->db_do("INSERT INTO phpbb3_posts SET topic_id = ?, forum_id = ?, poster_id = ?, post_time = ?, enable_smilies = 0, post_subject = ?, post_text = ?, bbcode_uid = ?, bbcode_bitfield = ?", {}, $topic, $forum, 53, $post_time, $title, $content, $uuid, "MEA=") or die;
+	my $post_id = $this->lastid;
+	if ($new) {
+		$this->db_do("UPDATE phpbb3_topics SET topic_first_post_id = ?, topic_first_poster_name = ? WHERE topic_id = ?", {}, $post_id, "Clans System", $topic) or die;
+	}
+	$this->db_do("UPDATE phpbb3_topics SET topic_last_post_id = ?, topic_last_post_time = ?, topic_last_post_subject = ?, topic_last_poster_id = ?, topic_last_poster_name = ?, topic_replies_real = topic_replies_real + 1, topic_replies = topic_replies + 1 WHERE topic_id = ?", {}, $post_id, $post_time, $title, 53, "Clans System", $topic) or die;
+	$this->db_do("UPDATE phpbb3_forums SET forum_last_post_id = ?, forum_last_post_time = ?, forum_last_post_subject = ?, forum_last_poster_id = ?, forum_last_poster_name = ? WHERE forum_id = ?", {}, $post_id, $post_time, $topic_title, 53, "Clans System", $forum) or die;
+}
+
+sub forum_new_thread {
+	my ($this, $forum, $title, $post_time) = @_;
+	$this->db_do("INSERT INTO phpbb3_topics SET forum_id = ?, topic_title = ?, topic_poster = ?, topic_time = ?", {}, $forum, $title, 53, $post_time) or die;
+	return $this->lastid;
 }
 
 1;

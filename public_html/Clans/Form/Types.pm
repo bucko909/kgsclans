@@ -14,7 +14,7 @@ name_page => {
 	exists => sub {
 		my ($c, $period) = @_;
 		if ($period) {
-			return $c->db_selectone("SELECT name FROM content WHERE clanperiod = ? AND name = ? AND current = 1", {}, $period, $_);
+			return $c->db_selectone("SELECT name FROM content WHERE period_id = ? AND name = ? AND current = 1", {}, $period, $_);
 		} else {
 			# Nonsense
 			return 1;
@@ -23,7 +23,7 @@ name_page => {
 	list => sub {
 		my ($c, $period) = @_;
 		if ($period) {
-			return $c->db_select("SELECT name, name FROM content WHERE clanperiod = ? AND current = 1", {}, $period);
+			return $c->db_select("SELECT name, name FROM content WHERE period_id = ? AND current = 1", {}, $period);
 		}
 		return;
 	},
@@ -38,7 +38,7 @@ revision_page => {
 	exists => sub {
 		my ($c, $period, $name) = @_;
 		if ($period && $name) {
-			return $c->db_selectone("SELECT revision FROM content WHERE clanperiod = ? AND name = ? AND revision = ?", {}, $period, $name, $_);
+			return $c->db_selectone("SELECT revision FROM content WHERE period_id = ? AND name = ? AND revision = ?", {}, $period, $name, $_);
 		} else {
 			# Nonsense
 			return 1;
@@ -47,7 +47,7 @@ revision_page => {
 	list => sub {
 		my ($c, $period, $name) = @_;
 		if ($period && $name) {
-			return $c->db_select("SELECT revision, revision FROM content WHERE clanperiod = ? AND name = ?", {}, $period, $name);
+			return $c->db_select("SELECT revision, revision FROM content WHERE period_id = ? AND name = ?", {}, $period, $name);
 		}
 		return;
 	},
@@ -64,10 +64,10 @@ content_page => {
 	get => sub {
 		my ($c, $period, $name, $revision) = @_;
 		if (!$revision) {
-			$revision = $c->db_selectone("SELECT revision FROM content WHERE clanperiod = ? AND name = ? AND current = 1", {}, $period, $name);
+			$revision = $c->db_selectone("SELECT revision FROM content WHERE period_id = ? AND name = ? AND current = 1", {}, $period, $name);
 		}
 		if ($revision) {
-			return $c->db_selectone("SELECT content FROM content WHERE clanperiod = ? AND name = ? AND revision = ?", {}, $period, $name, $revision);
+			return $c->db_selectone("SELECT content FROM content WHERE period_id = ? AND name = ? AND revision = ?", {}, $period, $name, $revision);
 		}
 		return;
 	},
@@ -75,7 +75,7 @@ content_page => {
 id_clan => {
 	defaults => {
 		brief => 'Clan',
-		readonly => [ qw/clan member brawl/ ],
+		readonly => [ qw/clan member team/ ],
 	},
 	check => sub {
 		/^\d+$/
@@ -87,7 +87,7 @@ id_clan => {
 	exists => sub {
 		my ($c, $period) = @_;
 		if ($period) {
-			return $c->db_selectone("SELECT id FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $_);
+			return $c->db_selectone("SELECT id FROM clans WHERE period_id = ? AND id = ?", {}, $period, $_);
 		} else {
 			return $c->db_selectone("SELECT id FROM clans WHERE id = ?", {}, $_);
 		}
@@ -95,14 +95,14 @@ id_clan => {
 	list => sub {
 		my ($c, $period) = @_;
 		if ($period) {
-			return $c->db_select("SELECT id, name FROM clans WHERE clanperiod = ?", {}, $period);
+			return $c->db_select("SELECT id, name FROM clans WHERE period_id = ?", {}, $period);
 		} else {
-			return $c->db_select("SELECT id, CONCAT(name, ' (period ', clanperiod, ')') FROM clans");
+			return $c->db_select("SELECT id, CONCAT(name, ' (period ', period_id, ')') FROM clans");
 		}
 	},
 	infer => sub {
 		my ($c) = @_;
-		$c->db_select("SELECT clanperiod FROM clans WHERE id = ?", {}, $_);
+		$c->db_select("SELECT period_id FROM clans WHERE id = ?", {}, $_);
 	},
 },
 name_clan => {
@@ -112,9 +112,9 @@ name_clan => {
 	exists => sub {
 		my ($c, $period, $clan_id) = @_;
 		if ($period && $clan_id) {
-			return $c->db_selectone("SELECT id FROM clans WHERE clanperiod = ? AND name = ? AND id != ?", {}, $period, $_, $clan_id);
+			return $c->db_selectone("SELECT id FROM clans WHERE period_id = ? AND name = ? AND id != ?", {}, $period, $_, $clan_id);
 		} elsif ($period) {
-			return $c->db_selectone("SELECT id FROM clans WHERE clanperiod = ? AND name = ?", {}, $period, $_);
+			return $c->db_selectone("SELECT id FROM clans WHERE period_id = ? AND name = ?", {}, $period, $_);
 		} else {
 			# Nonsense
 			return 1;
@@ -123,7 +123,7 @@ name_clan => {
 	get => sub {
 		my ($c, $period, $clan_id) = @_;
 		if ($period && $clan_id) {
-			return $c->db_selectone("SELECT name FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+			return $c->db_selectone("SELECT name FROM clans WHERE period_id = ? AND id = ?", {}, $period, $clan_id);
 		} else {
 			return;
 		}
@@ -137,7 +137,7 @@ info_clan => {
 	get => sub {
 		my ($c, $period, $clan_id) = @_;
 		if ($period && $clan_id) {
-			return $c->db_selectone("SELECT looking FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+			return $c->db_selectone("SELECT looking FROM clans WHERE period_id = ? AND id = ?", {}, $period, $clan_id);
 		} else {
 			return;
 		}
@@ -151,7 +151,7 @@ url_clan => {
 	get => sub {
 		my ($c, $period, $clan_id) = @_;
 		if ($period && $clan_id) {
-			return $c->db_selectone("SELECT url FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+			return $c->db_selectone("SELECT url FROM clans WHERE period_id = ? AND id = ?", {}, $period, $clan_id);
 		} else {
 			return;
 		}
@@ -167,9 +167,9 @@ tag_clan => {
 	exists => sub {
 		my ($c, $period, $clan_id) = @_;
 		if ($period && $clan_id) {
-			return $c->db_selectone("SELECT id FROM clans WHERE clanperiod = ? AND tag = ? AND id != ?", {}, $period, $_, $clan_id);
+			return $c->db_selectone("SELECT id FROM clans WHERE period_id = ? AND tag = ? AND id != ?", {}, $period, $_, $clan_id);
 		} elsif ($period) {
-			return $c->db_selectone("SELECT id FROM clans WHERE clanperiod = ? AND tag = ?", {}, $period, $_);
+			return $c->db_selectone("SELECT id FROM clans WHERE period_id = ? AND tag = ?", {}, $period, $_);
 		} else {
 			# Nonsense
 			return 1;
@@ -178,7 +178,7 @@ tag_clan => {
 	get => sub {
 		my ($c, $period, $clan_id) = @_;
 		if ($period && $clan_id) {
-			return $c->db_selectone("SELECT tag FROM clans WHERE clanperiod = ? AND id = ?", {}, $period, $clan_id);
+			return $c->db_selectone("SELECT tag FROM clans WHERE period_id = ? AND id = ?", {}, $period, $clan_id);
 		} else {
 			return;
 		}
@@ -195,7 +195,7 @@ id_kgs => {
 		my ($c, $period, $clan_id, $member_id) = @_;
 		use warnings;
 		if ($period) {
-			my $id = $c->db_selectone("SELECT id FROM aliases WHERE clanperiod = ? AND id = ?", {}, $period, $_);
+			my $id = $c->db_selectone("SELECT id FROM kgs_usernames WHERE period_id = ? AND id = ?", {}, $period, $_);
 			return $id;
 		} else {
 			# Nonsense
@@ -205,7 +205,7 @@ id_kgs => {
 	list => sub {
 		my ($c, $period, $clan_id, $member_id) = @_;
 		if ($member_id) {
-			return $c->db_select("SELECT id, nick FROM aliases WHERE member_id = ?", {}, $member_id);
+			return $c->db_select("SELECT id, nick FROM kgs_usernames WHERE member_id = ?", {}, $member_id);
 		}
 		return;
 	},
@@ -227,7 +227,7 @@ name_kgs => {
 		my ($c, $period) = @_;
 		use warnings;
 		if ($period) {
-			my $id = $c->db_selectone("SELECT id FROM aliases WHERE clanperiod = ? AND nick = ?", {}, $period, $_);
+			my $id = $c->db_selectone("SELECT id FROM kgs_usernames WHERE period_id = ? AND nick = ?", {}, $period, $_);
 			return $id;
 		} else {
 			# Nonsense
@@ -247,11 +247,11 @@ id_member => {
 	exists => sub {
 		my ($c, $period, $clan, $team) = @_;
 		if ($period && $clan && $team) {
-			return $c->db_select("SELECT members.id, members.name FROM clans INNER JOIN brawl_teams ON clans.id = brawl_teams.clan_id INNER JOIN brawl_team_members ON brawl_team_members.team_id = brawl_teams.team_id INNER JOIN members ON members.id = brawl_team_members.member_id WHERE clans.clanperiod = ? AND clans.id = ? AND brawl_teams.team_id = ? AND members.id = ?", {}, $period, $clan, $team, $_);
+			return $c->db_select("SELECT members.id, members.name FROM clans INNER JOIN teams ON clans.id = teams.clan_id INNER JOIN team_members ON team_members.team_id = teams.id INNER JOIN members ON members.id = team_members.member_id WHERE clans.period_id = ? AND clans.id = ? AND teams.id = ? AND members.id = ?", {}, $period, $clan, $team, $_);
 		} elsif ($period && $clan) {
-			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND members.id = ?", {}, $period, $clan, $_);
+			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? AND members.id = ?", {}, $period, $clan, $_);
 		} elsif ($period) {
-			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND members.id = ?", {}, $period, $_);
+			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND members.id = ?", {}, $period, $_);
 		} elsif ($clan) {
 			return $c->db_selectone("SELECT id FROM members WHERE clan_id = ? AND id = ?", {}, $clan, $_);
 		} else {
@@ -261,20 +261,20 @@ id_member => {
 	list => sub {
 		my ($c, $period, $clan, $team) = @_;
 		if ($period && $clan && $team) {
-			return $c->db_select("SELECT members.id, members.name FROM clans INNER JOIN brawl_teams ON clans.id = brawl_teams.clan_id INNER JOIN brawl_team_members ON brawl_team_members.team_id = brawl_teams.team_id INNER JOIN members ON members.id = brawl_team_members.member_id WHERE clans.clanperiod = ? AND clans.id = ? AND brawl_teams.team_id = ?", {}, $period, $clan, $team);
+			return $c->db_select("SELECT members.id, members.name FROM clans INNER JOIN teams ON clans.id = teams.clan_id INNER JOIN team_members ON team_members.team_id = teams.id INNER JOIN members ON members.id = team_members.member_id WHERE clans.period_id = ? AND clans.id = ? AND teams.id = ?", {}, $period, $clan, $team);
 		} elsif ($period && $clan) {
-			return $c->db_select("SELECT members.id, members.name FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ?", {}, $period, $clan);
+			return $c->db_select("SELECT members.id, members.name FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ?", {}, $period, $clan);
 		} elsif ($period) {
-			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ?", {}, $period);
+			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ?", {}, $period);
 		} elsif ($clan) {
 			return $c->db_select("SELECT id, name FROM members WHERE clan_id = ?", {}, $clan);
 		} else {
-			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ', period ', clans.clanperiod, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id");
+			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ', period ', clans.period_id, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id");
 		}
 	},
 	infer => sub {
 		my ($c) = @_;
-		$c->db_select("SELECT clans.clanperiod, clans.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE members.id = ?", {}, $_);
+		$c->db_select("SELECT clans.period_id, clans.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE members.id = ?", {}, $_);
 	},
 },
 name_member => {
@@ -287,9 +287,9 @@ name_member => {
 	exists => sub {
 		my ($c, $period, $clan, $memberid) = @_;
 		if ($period && $clan && $memberid) {
-			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND members.name = ? AND members.id != ?", {}, $period, $clan, $_, $memberid);
+			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? AND members.name = ? AND members.id != ?", {}, $period, $clan, $_, $memberid);
 		} elsif ($period && $clan) {
-			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND members.name = ?", {}, $period, $clan, $_);
+			return $c->db_selectone("SELECT members.id FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? AND members.name = ?", {}, $period, $clan, $_);
 		} elsif ($period) {
 			# Normally nonsense, but it's used in the case of creation of a new clan.
 			return 0;
@@ -320,10 +320,38 @@ rank_member => {
 		}
 	}
 },
-id_brawlteam => {
+id_challenge => {
 	defaults => {
-		brief => 'Brawl team',
-		readonly => [ qw/brawl/ ],
+		brief => 'Challenge',
+	},
+	check => sub {
+		/^\d+$/
+	},
+	exists => sub {
+		my ($c, $period, $clan) = @_;
+		if ($clan) {
+			return $c->db_selectone("SELECT challenges.id FROM challenges INNER JOIN clans ON challenged_clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? AND challenges.id = ?", {}, $period, $clan, $_);
+		} else {
+			return $c->db_selectone("SELECT challenges.id FROM challenges INNER JOIN clans ON challenged_clan_id = clans.id WHERE clans.period_id = ? AND challenges.id = ?", {}, $period, $_);
+		}
+	},
+	list => sub {
+		my ($c, $period, $clan) = @_;
+		if ($clan) {
+			return $c->db_select("SELECT challenges.id, CONCAT(teams.name, ' (', clans.name, ')') FROM challenges INNER JOIN teams ON challenges.challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND challenged_clan_id = ?", {}, $period, $clan);
+		} else {
+			return $c->db_select("SELECT challenges.id, CONCAT(teams.name, ' (', clans.name, ')') FROM challenges INNER JOIN teams ON challenges.challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ?", {}, $period);
+		}
+	},
+	infer => sub {
+		my ($c) = @_;
+		$c->db_select("SELECT clans.period_id, clans.id FROM challenges INNER JOIN clans ON challenged_clan_id = clans.id WHERE challenges.id = ?", {}, $_);
+	},
+},
+id_team => {
+	defaults => {
+		brief => 'Team',
+		readonly => [ qw/team/ ],
 	},
 	check => sub {
 		/^\d+$/
@@ -331,49 +359,49 @@ id_brawlteam => {
 	exists => sub {
 		my ($c, $period, $clan) = @_;
 		if ($period && $clan) {
-			return $c->db_selectone("SELECT brawl_teams.team_id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND brawl_teams.team_id = ?", {}, $period, $clan, $_);
+			return $c->db_selectone("SELECT teams.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? AND teams.id = ?", {}, $period, $clan, $_);
 		} elsif ($period) {
-			return $c->db_selectone("SELECT brawl_teams.team_id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND brawl_teams.team_id = ?", {}, $period, $_);
+			return $c->db_selectone("SELECT teams.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND teams.id = ?", {}, $period, $_);
 		} elsif ($clan) {
-			return $c->db_selectone("SELECT brawl_teams.team_id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.id = ? AND brawl_teams.team_id = ?", {}, $clan, $_);
+			return $c->db_selectone("SELECT teams.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.id = ? AND teams.id = ?", {}, $clan, $_);
 		} else {
-			return $c->db_selectone("SELECT team_id FROM brawl_teams WHERE team_id = ?", {}, $_);
+			return $c->db_selectone("SELECT id FROM teams WHERE id = ?", {}, $_);
 		}
 	},
 	list => sub {
 		my ($c, $period, $clan) = @_;
 		if ($period && $clan) {
-			return $c->db_select("SELECT brawl_teams.team_id, brawl_teams.name FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? ORDER BY team_number", {}, $period, $clan);
+			return $c->db_select("SELECT teams.id, teams.name FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? ORDER BY team_number", {}, $period, $clan);
 		} elsif ($period) {
-			return $c->db_select("SELECT brawl_teams.team_id, CONCAT(brawl_teams.name, ' (', clans.name, ')') FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? ORDER BY clans.name, team_number", {}, $period);
+			return $c->db_select("SELECT teams.id, CONCAT(teams.name, ' (', clans.name, ')') FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? ORDER BY clans.name, team_number", {}, $period);
 		} elsif ($clan) {
-			return $c->db_select("SELECT brawl_teams.team_id, brawl_teams.name FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.id = ? ORDER BY team_number", {}, $clan);
+			return $c->db_select("SELECT teams.id, teams.name FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.id = ? ORDER BY team_number", {}, $clan);
 		} else {
-			return $c->db_select("SELECT brawl_teams.team_id, CONCAT(brawl_teams.name, ' (', clans.name, ', period ', clans.clanperiod, ')') FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id ORDER BY clanperiod, clans.name, team_number");
+			return $c->db_select("SELECT teams.id, CONCAT(teams.name, ' (', clans.name, ', period ', clans.period_id, ')') FROM teams INNER JOIN clans ON teams.clan_id = clans.id ORDER BY period_id, clans.name, team_number");
 		}
 	},
 	infer => sub {
 		my ($c) = @_;
-		$c->db_select("SELECT clans.clanperiod, clans.id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE brawl_teams.team_id = ?", {}, $_);
+		$c->db_select("SELECT clans.period_id, clans.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE teams.id = ?", {}, $_);
 	},
 },
-name_brawlteam => {
+name_team => {
 	defaults => {
-		brief => 'Brawl team name',
+		brief => 'Team name',
 	},
 	check => sub {
 		/^[a-zA-Z0-9 ,.-]+$/
 	},
 	exists => sub {
 		my ($c, $period, $clan, $team_id) = @_;
-		my $where_extra = $team_id ? " AND brawl_teams.team_id != ?" : "";
+		my $where_extra = $team_id ? " AND teams.id != ?" : "";
 		my @param_extra = $team_id ? ($team_id) : ();
 		if ($period && $clan) {
-			return $c->db_selectone("SELECT brawl_teams.team_id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND clans.id = ? AND brawl_teams.name = ?$where_extra", {}, $period, $clan, $_, @param_extra);
+			return $c->db_selectone("SELECT teams.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? AND teams.name = ?$where_extra", {}, $period, $clan, $_, @param_extra);
 		} elsif ($period) {
-			return $c->db_selectone("SELECT brawl_teams.team_id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.clanperiod = ? AND brawl_teams.name = ?$where_extra", {}, $period, $_, @param_extra);
+			return $c->db_selectone("SELECT teams.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND teams.name = ?$where_extra", {}, $period, $_, @param_extra);
 		} elsif ($clan) {
-			return $c->db_selectone("SELECT brawl_teams.team_id FROM brawl_teams INNER JOIN clans ON brawl_teams.clan_id = clans.id WHERE clans.id = ? AND brawl_teams.name = ?$where_extra", {}, $clan, $_, @param_extra);
+			return $c->db_selectone("SELECT teams.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.id = ? AND teams.name = ?$where_extra", {}, $clan, $_, @param_extra);
 		} else {
 			# Nonsense
 			return 1;
@@ -383,13 +411,13 @@ name_brawlteam => {
 	get => sub {
 		my ($c, $period, $clan, $teamid) = @_;
 		if ($teamid) {
-			return $c->db_selectone("SELECT brawl_teams.name FROM brawl_teams WHERE brawl_teams.team_id = ?", {}, $teamid);
+			return $c->db_selectone("SELECT teams.name FROM teams WHERE teams.id = ?", {}, $teamid);
 		}
 	},
 },
-positions_brawlteam => {
+positions_team => {
 	defaults => {
-		brief => 'Brawl team name',
+		brief => 'Team positions',
 	},
 	check => sub {
 		/^[a-zA-Z0-9 ,.-]+$/
@@ -400,8 +428,7 @@ positions_brawlteam => {
 		my ($c, $period, $clan, $teamid) = @_;
 		if ($teamid) {
 			# TODO should be more generic
-			my $results = $c->db_select("SELECT brawl.position, members.id, members.name, members.rank FROM brawl INNER JOIN members ON members.id = brawl.member_id WHERE brawl.team_id = ? ORDER BY brawl.position", {}, $teamid);
-			my @brawl;
+			my $results = $c->db_select("SELECT team_seats.seat_no, members.id, members.name, members.rank FROM team_seats INNER JOIN members ON members.id = team_seats.member_id WHERE team_seats.team_id = ? ORDER BY team_seats.seat_no", {}, $teamid);
 			return "Team has no members." if !$results || !@$results;
 			my $result = "<ul>";
 			for(@$results) {
@@ -441,10 +468,10 @@ text => {
 	exists => undef,
 #	list => sub { },
 },
-id_clanperiod => {
+id_period => {
 	defaults => {
 		brief => 'Clan period',
-		hidden => [ qw/clan member alias brawl/ ],
+		hidden => [ qw/clan member alias team/ ],
 	},
 	check => sub {
 		/^\d+$/

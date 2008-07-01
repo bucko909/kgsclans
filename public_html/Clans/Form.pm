@@ -95,7 +95,7 @@ sub process_form {
 		for my $param_name (keys %$input_params_info) {
 			next if is('informational', $input_params_info->{$param_name}, $category);
 			my $value = $input_params_info->{$param_name}{value};
-			print qq|<input type="hidden" name="$name\_$param_name" value="|.$c->escapeHTML($value).qq|"/>|;
+			print qq|<input type="hidden" name="$name\_$param_name" value="|.$c->escapeHTML($value).qq|"/>| if $value;
 		}
 		print qq|</form><p>Or you can <a href="javascript:document.$name.submit()">do this form again</a>.</p>|;
 		$c->footer;
@@ -107,16 +107,39 @@ sub process_form {
 
 sub no_access {
 	my ($c, $name, $params, $params_info) = @_;
-	my $level = $forms{$name}{level};
-	$level =~ s/\$(\w+)/my $val = $params_info->{$1}{value}; defined $val ? $val : ""/eg;
-	if ($level eq 'admin' || $level =~ /clan_(leader|moderator)\(\)/) {
-		return $c->is_admin() ? undef : "You are not an admin";
-	} elsif ($level =~ /clan_leader\((\d+)\)/) {
-		return $c->is_clan_leader($1) ? undef : "You are not a clan leader";
-	} elsif ($level =~ /clan_moderator\((\d+)\)/) {
-		return $c->is_clan_moderator($1) ? undef : "You are not a clan moderator";
-	} else {
-		return "This action required an unknown permission";
+	my @checks = split /\|/, $forms{$name}{checks};
+	for my $level (@checks) {
+		$level =~ s/\$(\w+)/my $val = $params_info->{$1}{value}; defined $val ? $val : ""/eg;
+		if ($level eq 'admin' || $level =~ /clan_(leader|moderator)\(\)/) {
+			if (!$c->is_admin()) {
+				return "You are not an admin";
+			}
+		} elsif ($level =~ /clan_leader\((\d+)\)/) {
+			if (!$c->is_clan_leader($1)) {
+				return "You are not a clan leader";
+			}
+		} elsif ($level =~ /clan_moderator\((\d+)\)/) {
+			if (!$c->is_clan_moderator($1)) {
+				return "You are not a clan moderator";
+			}
+		} elsif ($level =~ /period_active\((\d+)\)/) {
+			my $current_period = $c->db_selectone("SELECT id FROM clanperiods ORDER BY id DESC LIMIT 1");
+			if ($current_period != $1 && !$c->is_admin()) {
+				return "This period is no longer active";
+			}
+		} elsif ($level =~ /period_predraw\((\d+)\)/) {
+			my $draw_made = $c->db_selectone("SELECT COUNT(*) FROM brawl WHERE period_id = ?", {}, $1);
+			if ($draw_made) {
+				return "Operation unavailable after draw has been made";
+			}
+		} elsif ($level =~ /period_prebrawl\((\d+)\)/) {
+			my $brawl_begun = $c->db_selectone("SELECT COUNT(*) FROM brawl NATURAL JOIN team_match_players WHERE brawl.period_id = ?", {}, $1);
+			if ($brawl_begun) {
+				return "Operation unavailable after brawl has begun";
+			}
+		} else {
+			return "This action required an unknown permission";
+		}
 	}
 }
 
@@ -426,9 +449,10 @@ sub output_form {
 				# Since we have a list of valid values, we make a <select>
 				my $update_str = $info->{force_update} ? qq| onchange="document.$qname.process.value='';document.$qname.$qname\_changed.value='$qparam_name';document.$qname.submit();"| : "";
 				$output .= qq|<select name="$qname\_$qparam_name"$update_str>|;
+				# TODO getting undef in names here...
 				foreach my $valid_item (@{$info->{value_list}}) {
 					my $selected = ($value && $value eq $valid_item->[0]) ? qq| selected="selected"| : "";
-					$output .= qq|<option value="|.$c->escapeHTML($valid_item->[0]).qq|"$selected>|.$c->escapeHTML($valid_item->[1]).qq|</option>|;
+					$output .= qq|<option value="|.$c->escapeHTML($valid_item->[0]).qq|"$selected>|.$c->escapeHTML($valid_item->[1]).qq|</option>| if $valid_item->[1];
 				}
 				$output .= "</select>";
 

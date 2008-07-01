@@ -24,9 +24,9 @@ for(qw/clanid memberid membername/) {
 # ===========================================================
 my $page;
 if ($c->param('revision')) {
-	$page = $c->db_selectrow("SELECT content, revision, phpbb3_users.username, created FROM content INNER JOIN phpbb3_users ON phpbb3_users.user_id = content.creator WHERE clanperiod = ? AND name = ? AND revision = ?", {}, $c->{period_info}{id}, $pagename, $c->param('revision'));
+	$page = $c->db_selectrow("SELECT content, revision, phpbb3_users.username, created FROM content INNER JOIN phpbb3_users ON phpbb3_users.user_id = content.creator WHERE period_id = ? AND name = ? AND revision = ?", {}, $c->{period_info}{id}, $pagename, $c->param('revision'));
 } else {
-	$page = $c->db_selectrow("SELECT content, revision, phpbb3_users.username, created FROM content INNER JOIN phpbb3_users ON phpbb3_users.user_id = content.creator WHERE clanperiod = ? AND name = ? AND current = 1", {}, $c->{period_info}{id}, $pagename);
+	$page = $c->db_selectrow("SELECT content, revision, phpbb3_users.username, created FROM content INNER JOIN phpbb3_users ON phpbb3_users.user_id = content.creator WHERE period_id = ? AND name = ? AND current = 1", {}, $c->{period_info}{id}, $pagename);
 }
 
 if (!$page) {
@@ -315,20 +315,20 @@ BEGIN {
 #			data => sub { qq#<a href="?page=clanadmin&amp;alter=set_clan_leader&amp;clanid=$_[1]&amp;memberid=$_[0]">New Leader</a># },
 #		},
 		mk => {
-			sqlcols => ["GROUP_CONCAT(CONCAT(aliases.nick,IF(aliases.rank IS NOT NULL,CONCAT(' [',IF(aliases.rank>0,CONCAT(aliases.rank,'k'),CONCAT(1-aliases.rank,'d')),']'),'')) ORDER BY aliases.nick ASC SEPARATOR ', ')"],
-			joins => [ 'LEFT OUTER JOIN aliases ON members.id = aliases.member_id' ],
+			sqlcols => ["GROUP_CONCAT(CONCAT(kgs_usernames.nick,IF(kgs_usernames.rank IS NOT NULL,CONCAT(' [',IF(kgs_usernames.rank>0,CONCAT(kgs_usernames.rank,'k'),CONCAT(1-kgs_usernames.rank,'d')),']'),'')) ORDER BY kgs_usernames.nick ASC SEPARATOR ', ')"],
+			joins => [ 'LEFT OUTER JOIN kgs_usernames ON members.id = kgs_usernames.member_id' ],
 			title => "KGS Usernames",
 			data => sub { $_[0] || "" },
 		},
 #		mke => {
-#			sqlcols => ["GROUP_CONCAT(CONCAT(aliases.nick,IF(aliases.rank IS NOT NULL,CONCAT(' [',IF(aliases.rank>0,CONCAT(aliases.rank,'k'),CONCAT(1-aliases.rank,'d')),']'),'')) ORDER BY aliases.nick ASC SEPARATOR ', ')", qw/members.id clans.id/],
-#			joins => [ 'LEFT OUTER JOIN aliases ON members.id = aliases.member_id' ],
+#			sqlcols => ["GROUP_CONCAT(CONCAT(kgs_usernames.nick,IF(kgs_usernames.rank IS NOT NULL,CONCAT(' [',IF(kgs_usernames.rank>0,CONCAT(kgs_usernames.rank,'k'),CONCAT(1-kgs_usernames.rank,'d')),']'),'')) ORDER BY kgs_usernames.nick ASC SEPARATOR ', ')", qw/members.id clans.id/],
+#			joins => [ 'LEFT OUTER JOIN kgs_usernames ON members.id = kgs_usernames.member_id' ],
 #			title => "KGS Usernames",
 #			data => sub { join(', ', map { my$a=$_;$a=~s/\s+.*//;"$_ (<a href=\"?page=clanadmin&amp;clanid=$_[2]&amp;alter=remove_member_alias&amp;memberid=$_[1]&amp;alias=$a\">X</a>)" } split /, /, $_[0]) },
 #		},
 #		mne => {
-#			sqlcols => [qw/members.id members.name clans.id COUNT(aliases.id)/],
-#			joins => [ 'LEFT OUTER JOIN aliases ON members.id = aliases.member_id' ],
+#			sqlcols => [qw/members.id members.name clans.id COUNT(kgs_usernames.id)/],
+#			joins => [ 'LEFT OUTER JOIN kgs_usernames ON members.id = kgs_usernames.member_id' ],
 #			title => "Name",
 #			init => sub {},
 #			sort => 1,
@@ -492,7 +492,7 @@ sub period_clantable {
 		}
 	);
 	my @cols = split /,/, ($c->param('ctcols') || $cols || 'cn,ct,cl,cmf,cpf,cwf,cpaf,cr');
-	&main_drawtable($c, \%period_clans_table, \@cols, $c->param('sort') || $sort, "clans", "clanperiod = ".$c->{period_info}{id});
+	&main_drawtable($c, \%period_clans_table, \@cols, $c->param('sort') || $sort, "clans", "period_id = ".$c->{period_info}{id}." AND clans.points > -50");
 }
 
 sub period_topplayers {
@@ -505,7 +505,7 @@ sub period_topplayers {
 		},
 	);
 	my @cols = split /,/, $cols || 'mn,cn,mpf';
-	&main_drawtable($c, \%period_topplayers_table, \@cols, "FIX:".$sort, "members", "clans.clanperiod = ".$c->{period_info}{id}." AND members.played >= 10", "LIMIT 10");
+	&main_drawtable($c, \%period_topplayers_table, \@cols, "FIX:".$sort, "members", "clans.period_id = ".$c->{period_info}{id}." AND members.played >= 10", "LIMIT 10");
 }
 
 sub membertable {
@@ -514,7 +514,7 @@ sub membertable {
 	my $defcols;
 	if ($clan && $clan eq 'all') {
 		$defcols = 'ma,mpf,mwf,mk,cn';
-		$clause = "clans.clanperiod = ".$c->{period_info}{id};
+		$clause = "clans.period_id = ".$c->{period_info}{id};
 	} else {
 		$defcols = 'ma,mpf,mwf,mk';
 		if (!$clan || $clan =~ /[^0-9]/) {
@@ -711,7 +711,7 @@ sub clan_brawllist {
 			return "Clan ID \"$clanid\" is invalid";
 		}
 	}
-	my $teams = $c->db_select("SELECT brawl_teams.team_id, name, team_number, COUNT(member_id) FROM brawl_teams LEFT OUTER JOIN brawl ON brawl_teams.team_id = brawl.team_id AND position >= 0 AND position <= 5 WHERE clan_id = ? GROUP BY brawl_teams.team_id ORDER BY team_number", {}, $clanid);
+	my $teams = $c->db_select("SELECT teams.id, name, team_number, COUNT(member_id) FROM teams LEFT OUTER JOIN team_positions ON teams.id = team_positions.team_id AND position >= 0 AND position <= 5 WHERE clan_id = ? GROUP BY teams.id ORDER BY team_number", {}, $clanid);
 	if (!$teams || !@$teams) {
 		return "<h3>Brawl Teams</h3><p>No brawl teams created!</p>";
 	}
@@ -739,7 +739,7 @@ sub clan_brawl_memberlist {
 	if (!$teamid) {
 		return "Team ID \"$teamid\" is invalid";
 	}
-	my $results = $c->db_select("SELECT brawl.position, members.id, members.name, members.rank FROM brawl INNER JOIN members ON members.id = brawl.member_id WHERE brawl.team_id = ? ORDER BY brawl.position", {}, $teamid);
+	my $results = $c->db_select("SELECT team_positions.position, members.id, members.name, members.rank FROM team_positions INNER JOIN members ON members.id = team_positions.member_id WHERE team_positions.team_id = ? ORDER BY team_positions.position", {}, $teamid);
 	my $result = '';
 	if (!$results || !@$results) {
 		$result .= "<p>Team has no roster.</p>";
@@ -751,7 +751,7 @@ sub clan_brawl_memberlist {
 		}
 		$result .= "</ul>";
 	}
-	$results = $c->db_select("SELECT members.id, members.name, members.rank FROM brawl_team_members LEFT OUTER JOIN brawl ON brawl.team_id = brawl_team_members.team_id AND brawl.member_id = brawl_team_members.member_id INNER JOIN members ON members.id = brawl_team_members.member_id WHERE brawl_team_members.team_id = ? AND brawl.position IS NULL ORDER BY members.name", {}, $teamid);
+	$results = $c->db_select("SELECT members.id, members.name, members.rank FROM team_members LEFT OUTER JOIN team_positions ON team_positions.team_id = team_members.team_id AND team_positions.member_id = team_members.member_id INNER JOIN members ON members.id = team_members.member_id WHERE team_members.team_id = ? AND team_positions.position IS NULL ORDER BY members.name", {}, $teamid);
 	if (!$results || !@$results) {
 		$result .= "<p>Team has no reserves.</p>";
 	} else {
@@ -770,7 +770,7 @@ sub clan_brawl_public_memberlist {
 	if (!$teamid) {
 		return "Team ID \"$teamid\" is invalid";
 	}
-	my $results = $c->db_select("SELECT members.id, members.name, members.rank FROM brawl_team_members INNER JOIN members ON members.id = brawl_team_members.member_id WHERE brawl_team_members.team_id = ? ORDER BY members.name", {}, $teamid);
+	my $results = $c->db_select("SELECT members.id, members.name, members.rank FROM team_members INNER JOIN members ON members.id = team_members.member_id WHERE team_members.team_id = ? ORDER BY members.name", {}, $teamid);
 	return "Team has no members." if !$results || !@$results;
 	my $result = "<ul>";
 	for(@$results) {
@@ -783,13 +783,13 @@ sub clan_brawl_public_memberlist {
 sub main_newperiod {
 	# Does not work yet, but here is SQL I used last time:
 	my $SQL = '
-	INSERT INTO clanperiods VALUES($newid, $starttime, $endtime);
-	INSERT INTO front_page SELECT text, $newid, textid FROM front_page WHERE clanperiod = $oldid;
-	INSERT INTO clans SELECT NULL, clans.name, clans.regex, 0, clans.userid, clans.tag, clans.url, clans.looking, $newid, 0 FROM clans INNER JOIN members ON clans.id = members.clan_id WHERE clanperiod = $oldid GROUP BY clans.id HAVING SUM(played) >= $clanthreshold;
-	DELETE FROM users USING users LEFT OUTER JOIN clans ON clans.userid = users.id AND clans.clanperiod = $newid WHERE users.adminlevel = 0 AND users.id != 1 AND clans.id IS NULL;
-	INSERT INTO members SELECT NULL, members.name, c2.id, 0, 0, 0, 0, NULL FROM members INNER JOIN clans c1 ON members.clan_id = c1.id AND c1.clanperiod = $oldid INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.clanperiod = $newid WHERE played > $memberthreshold;
-	INSERT INTO aliases SELECT NULL, 0, m2.id, aliases.nick, NULL, $newid, $time FROM aliases INNER JOIN members m1 ON aliases.member_id = m1.id INNER JOIN clans c1 ON m1.clan_id = c1.id AND c1.clanperiod = $oldid INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.clanperiod = $newid INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;
-	CREATE TEMPORARY TABLE temp SELECT c2.id, c1.leader_id FROM clans c1 INNER JOIN clans c2 ON c1.tag = c2.tag AND c1.clanperiod = 2 AND c2.clanperiod = 3 INNER JOIN members m1 on m1.id = c1.leader_id INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;
+	INSERT INTO period_ids VALUES($newid, $starttime, $endtime);
+	INSERT INTO front_page SELECT text, $newid, textid FROM front_page WHERE period_id = $oldid;
+	INSERT INTO clans SELECT NULL, clans.name, clans.regex, 0, clans.userid, clans.tag, clans.url, clans.looking, $newid, 0 FROM clans INNER JOIN members ON clans.id = members.clan_id WHERE period_id = $oldid GROUP BY clans.id HAVING SUM(played) >= $clanthreshold;
+	DELETE FROM users USING users LEFT OUTER JOIN clans ON clans.userid = users.id AND clans.period_id = $newid WHERE users.adminlevel = 0 AND users.id != 1 AND clans.id IS NULL;
+	INSERT INTO members SELECT NULL, members.name, c2.id, 0, 0, 0, 0, NULL FROM members INNER JOIN clans c1 ON members.clan_id = c1.id AND c1.period_id = $oldid INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.period_id = $newid WHERE played > $memberthreshold;
+	INSERT INTO kgs_usernames SELECT NULL, 0, m2.id, kgs_usernames.nick, NULL, $newid, $time FROM kgs_usernames INNER JOIN members m1 ON kgs_usernames.member_id = m1.id INNER JOIN clans c1 ON m1.clan_id = c1.id AND c1.period_id = $oldid INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.period_id = $newid INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;
+	CREATE TEMPORARY TABLE temp SELECT c2.id, c1.leader_id FROM clans c1 INNER JOIN clans c2 ON c1.tag = c2.tag AND c1.period_id = 2 AND c2.period_id = 3 INNER JOIN members m1 on m1.id = c1.leader_id INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;
 	UPDATE clans INNER JOIN temp ON clans.id = temp.id SET clans.leader_id = temp.leader_id;';
 }
 

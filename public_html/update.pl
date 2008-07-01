@@ -76,7 +76,7 @@ if ($mode eq 'all') {
 		print $c->footer;
 		exit;
 	}
-	my $clan = $c->db_selectrow("SELECT id, name, regex FROM clans WHERE id = ? AND clanperiod = ?", {}, $c->param('id'), $periodid);
+	my $clan = $c->db_selectrow("SELECT id, name, regex FROM clans WHERE id = ? AND period_id = ?", {}, $c->param('id'), $periodid);
 	$uclan = $clan->[0];
 	if ($clan) {
 		@games = clangames($clan);
@@ -84,7 +84,7 @@ if ($mode eq 'all') {
 		print $c->p("Invalid clan ID: ".$c->param('id'));
 	}
 } elsif ($mode eq 'member') {
-	my $member = $c->db_selectrow("SELECT members.id, members.name FROM members INNER JOIN clans ON clans.id = members.clan_id WHERE members.id = ? AND clanperiod = ?", {}, $c->param('id'), $periodid);
+	my $member = $c->db_selectrow("SELECT members.id, members.name FROM members INNER JOIN clans ON clans.id = members.clan_id WHERE members.id = ? AND period_id = ?", {}, $c->param('id'), $periodid);
 	$umember = $member->[0];
 	if ($member) {
 		@games = membergames($member);
@@ -116,13 +116,13 @@ $c->footer;
 # =================================================
 
 sub allgames {
-	my $aliases = $c->db_select("SELECT id, nick, lastgame, lastupdate FROM aliases WHERE clanperiod = ? ORDER BY lastupdate ASC", {}, $periodid);
+	my $kgs_usernames = $c->db_select("SELECT id, nick, lastgame, lastupdate FROM kgs_usernames WHERE period_id = ? ORDER BY lastupdate ASC", {}, $periodid);
 	my @update;
-	foreach my $alias (@$aliases) {
+	foreach my $alias (@$kgs_usernames) {
 		push @update, aliasgames($alias);
 	}
 	return @update;
-	#my $clans = $c->db_select("SELECT id, name, regex FROM clans WHERE clanperiod = ?", {}, $periodid);
+	#my $clans = $c->db_select("SELECT id, name, regex FROM clans WHERE period_id = ?", {}, $periodid);
 	#my @update;
 	#foreach my $clan (@$clans) {
 	#	push @update, clangames($clan);
@@ -144,9 +144,9 @@ sub clangames {
 sub membergames {
 	my $member = $_[0];
 	print $c->p("Updating member $member->[1] ($member->[0]).\n");
-	my $aliases = $c->db_select("SELECT id, nick, lastgame, lastupdate FROM aliases WHERE member_id = ? AND clanperiod = ?", {}, $member->[0], $periodid);
+	my $kgs_usernames = $c->db_select("SELECT id, nick, lastgame, lastupdate FROM kgs_usernames WHERE member_id = ? AND period_id = ?", {}, $member->[0], $periodid);
 	my @update;
-	foreach my $alias (@$aliases) {
+	foreach my $alias (@$kgs_usernames) {
 		push @update, aliasgames($alias);
 	}
 	return @update;
@@ -188,9 +188,9 @@ sub aliasgames {
 	}
 	# Finally, use the rank we found from the system to update the alias.
 	if ($page_fail) {
-		$c->db_do("UPDATE aliases SET lastupdate = ? WHERE id = ?", {}, time(), $alias->[0]);
+		$c->db_do("UPDATE kgs_usernames SET lastupdate = ? WHERE id = ?", {}, time(), $alias->[0]);
 	} else {
-		$c->db_do("UPDATE aliases SET rank = ?, lastupdate = ? WHERE id = ?", {}, $rank, time(), $alias->[0]);
+		$c->db_do("UPDATE kgs_usernames SET rank = ?, lastupdate = ? WHERE id = ?", {}, $rank, time(), $alias->[0]);
 	}
 	
 	return @games;
@@ -441,7 +441,7 @@ sub parsegame {
 				print $c->p("<b>Error adding B result: ".DBI->errstr."</b>\n");
 			}
 		}
-		if (!$c->db_do("UPDATE aliases SET activity = IF(? > activity, ?, activity) WHERE nick = ?", {}, $time, $time, $black)) {
+		if (!$c->db_do("UPDATE kgs_usernames SET activity = IF(? > activity, ?, activity) WHERE nick = ?", {}, $time, $time, $black)) {
 			print $c->p("<b>Error updating B activity: ".DBI->errstr."</b>\n");
 		}
 		if (!$c->db_do("UPDATE clans SET points = points + 1 WHERE id = ?", {}, $bclan)) {
@@ -457,7 +457,7 @@ sub parsegame {
 				print $c->p("<b>Error adding W result: ".DBI->errstr."</b>\n");
 			}
 		}
-		if (!$c->db_do("UPDATE aliases SET activity = IF(? > activity, ?, activity) WHERE nick = ?", {}, $time, $time, $white)) {
+		if (!$c->db_do("UPDATE kgs_usernames SET activity = IF(? > activity, ?, activity) WHERE nick = ?", {}, $time, $time, $white)) {
 			print $c->p("<b>Error updating W activity: ".DBI->errstr."</b>\n");
 		}
 		if (!$c->db_do("UPDATE clans SET points = points + 1 WHERE id = ?", {}, $wclan)) {
@@ -492,12 +492,12 @@ sub parsegame {
 		# Note that if we execute the statement, this game is guaranteed to be
 		# more recent than lastgame.
 		if ($white_id && ($wclan == $uclan || $white_id == $umember || $uall)) {
-			if (!$c->db_do("UPDATE aliases SET lastgame = ? WHERE id = ?", {}, $time, $walias_id)) {
+			if (!$c->db_do("UPDATE kgs_usernames SET lastgame = ? WHERE id = ?", {}, $time, $walias_id)) {
 				print $c->p("<b>Error updating alias time for white.</b>\n");
 			}
 		}
 		if ($black_id && ($bclan == $uclan || $black_id == $umember || $uall)) {
-			if (!$c->db_do("UPDATE aliases SET lastgame = ? WHERE id = ?", {}, $time, $balias_id)) {
+			if (!$c->db_do("UPDATE kgs_usernames SET lastgame = ? WHERE id = ?", {}, $time, $balias_id)) {
 				print $c->p("<b>Error updating alias time for black.</b>\n");
 			}
 		}
@@ -546,7 +546,7 @@ sub is_clan {
 }
 
 sub player_info {
-	my $res = $c->db_select("SELECT member_id, regex, clans.id, aliases.id FROM clans INNER JOIN members ON members.clan_id = clans.id INNER JOIN aliases ON aliases.member_id = members.id WHERE aliases.nick = ? AND aliases.clanperiod = ?", {}, $_[0], $periodid);
+	my $res = $c->db_select("SELECT member_id, regex, clans.id, kgs_usernames.id FROM clans INNER JOIN members ON members.clan_id = clans.id INNER JOIN kgs_usernames ON kgs_usernames.member_id = members.id WHERE kgs_usernames.nick = ? AND kgs_usernames.period_id = ?", {}, $_[0], $periodid);
 	if ($res && @$res) {
 		return @{$res->[0]};
 	}
