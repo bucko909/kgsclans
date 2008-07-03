@@ -1141,7 +1141,7 @@ add_challenge => {
 	brief => 'Challenge a clan',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	category => [ qw/clan admin/ ],
-	description => 'This form allows you to add a new team for your clan. Note that it currently does not check you have met the requirements for entering teams into the brawl, so even if you can add a team it doesn\'t mean it will be entered into the brawl.',
+	description => 'This form allows you to challenge another clan. The other clan can pick which team they respond to (you may want to agree this with them beforehand). They must respond within 2 weekly updates.',
 	params => [
 		period_id => {
 			type => 'id_period',
@@ -1165,6 +1165,7 @@ add_challenge => {
 		chal_id => {
 			type => 'id_clan($period_id)',
 			brief => 'Clan to challenge',
+			readonly => [],
 		},
 		chal_name => {
 			type => 'name_clan($period_id,$chal_id)',

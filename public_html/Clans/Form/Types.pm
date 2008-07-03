@@ -23,7 +23,7 @@ name_page => {
 	list => sub {
 		my ($c, $period) = @_;
 		if ($period) {
-			return $c->db_select("SELECT name, name FROM content WHERE period_id = ? AND current = 1", {}, $period);
+			return $c->db_select("SELECT name, name FROM content WHERE period_id = ? AND current = 1 ORDER BY name", {}, $period);
 		}
 		return;
 	},
@@ -47,7 +47,7 @@ revision_page => {
 	list => sub {
 		my ($c, $period, $name) = @_;
 		if ($period && $name) {
-			return $c->db_select("SELECT revision, revision FROM content WHERE period_id = ? AND name = ?", {}, $period, $name);
+			return $c->db_select("SELECT revision, revision FROM content WHERE period_id = ? AND name = ? ORDER BY revision", {}, $period, $name);
 		}
 		return;
 	},
@@ -95,9 +95,9 @@ id_clan => {
 	list => sub {
 		my ($c, $period) = @_;
 		if ($period) {
-			return $c->db_select("SELECT id, name FROM clans WHERE period_id = ?", {}, $period);
+			return $c->db_select("SELECT id, name FROM clans WHERE period_id = ? ORDER BY name", {}, $period);
 		} else {
-			return $c->db_select("SELECT id, CONCAT(name, ' (period ', period_id, ')') FROM clans");
+			return $c->db_select("SELECT id, CONCAT(name, ' (period ', period_id, ')') FROM clans ORDER BY period_id, name");
 		}
 	},
 	infer => sub {
@@ -205,7 +205,7 @@ id_kgs => {
 	list => sub {
 		my ($c, $period, $clan_id, $member_id) = @_;
 		if ($member_id) {
-			return $c->db_select("SELECT id, nick FROM kgs_usernames WHERE member_id = ?", {}, $member_id);
+			return $c->db_select("SELECT id, nick FROM kgs_usernames WHERE member_id = ? ORDER BY nick", {}, $member_id);
 		}
 		return;
 	},
@@ -261,15 +261,15 @@ id_member => {
 	list => sub {
 		my ($c, $period, $clan, $team) = @_;
 		if ($period && $clan && $team) {
-			return $c->db_select("SELECT members.id, members.name FROM clans INNER JOIN teams ON clans.id = teams.clan_id INNER JOIN team_members ON team_members.team_id = teams.id INNER JOIN members ON members.id = team_members.member_id WHERE clans.period_id = ? AND clans.id = ? AND teams.id = ?", {}, $period, $clan, $team);
+			return $c->db_select("SELECT members.id, members.name FROM clans INNER JOIN teams ON clans.id = teams.clan_id INNER JOIN team_members ON team_members.team_id = teams.id INNER JOIN members ON members.id = team_members.member_id WHERE clans.period_id = ? AND clans.id = ? AND teams.id = ? ORDER BY members.name", {}, $period, $clan, $team);
 		} elsif ($period && $clan) {
-			return $c->db_select("SELECT members.id, members.name FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ?", {}, $period, $clan);
+			return $c->db_select("SELECT members.id, members.name FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? AND clans.id = ? ORDER BY members.name", {}, $period, $clan);
 		} elsif ($period) {
-			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ?", {}, $period);
+			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id WHERE clans.period_id = ? ORDER BY clans.name, members.name", {}, $period);
 		} elsif ($clan) {
-			return $c->db_select("SELECT id, name FROM members WHERE clan_id = ?", {}, $clan);
+			return $c->db_select("SELECT id, name FROM members WHERE clan_id = ? ORDER BY members.name", {}, $clan);
 		} else {
-			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ', period ', clans.period_id, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id");
+			return $c->db_select("SELECT members.id, CONCAT(members.name, ' (', clans.name, ', period ', clans.period_id, ')') FROM members INNER JOIN clans ON members.clan_id = clans.id ORDER BY clans.period_id, clans.name, members.name");
 		}
 	},
 	infer => sub {
@@ -338,9 +338,9 @@ id_challenge => {
 	list => sub {
 		my ($c, $period, $clan) = @_;
 		if ($clan) {
-			return $c->db_select("SELECT challenges.id, CONCAT(teams.name, ' (', clans.name, ')') FROM challenges INNER JOIN teams ON challenges.challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND challenged_clan_id = ?", {}, $period, $clan);
+			return $c->db_select("SELECT challenges.id, CONCAT(teams.name, ' (', clans.name, ')') FROM challenges INNER JOIN teams ON challenges.challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? AND challenged_clan_id = ? ORDER BY teams.name, clans.name", {}, $period, $clan);
 		} else {
-			return $c->db_select("SELECT challenges.id, CONCAT(teams.name, ' (', clans.name, ')') FROM challenges INNER JOIN teams ON challenges.challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ?", {}, $period);
+			return $c->db_select("SELECT challenges.id, CONCAT(teams.name, ' (', clans.name, ')') FROM challenges INNER JOIN teams ON challenges.challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ? ORDER BY teams.name, clans.name", {}, $period);
 		}
 	},
 	infer => sub {
@@ -482,7 +482,7 @@ id_period => {
 	},
 	list => sub {
 		my ($c) = @_;
-		return $c->db_select("SELECT id, id FROM clanperiods");
+		return $c->db_select("SELECT id, id FROM clanperiods ORDER BY id");
 	},
 	default => sub {
 		my ($c) = @_;
@@ -510,7 +510,7 @@ id_forum => {
 	},
 	list => sub {
 		my ($c) = @_;
-		return [ sort { lc $a->[1] cmp lc $b->[1] } @{$c->db_select("SELECT user_id, username FROM phpbb3_users")} ];
+		return [ sort { lc $a->[1] cmp lc $b->[1] } @{$c->db_select("SELECT user_id, username FROM phpbb3_users ORDER BY username")} ];
 	},
 },
 boolean => {
