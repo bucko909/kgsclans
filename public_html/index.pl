@@ -711,7 +711,7 @@ sub clan_brawllist {
 			return "Clan ID \"$clanid\" is invalid";
 		}
 	}
-	my $teams = $c->db_select("SELECT teams.id, name, team_number, COUNT(member_id) FROM teams LEFT OUTER JOIN team_positions ON teams.id = team_positions.team_id AND position >= 0 AND position <= 5 WHERE clan_id = ? GROUP BY teams.id ORDER BY team_number", {}, $clanid);
+	my $teams = $c->db_select("SELECT teams.id, name, team_number, COUNT(member_id) FROM teams LEFT OUTER JOIN team_seats ON teams.id = team_seats.team_id AND seat_no >= 0 AND seat_no <= 4 WHERE clan_id = ? GROUP BY teams.id ORDER BY team_number", {}, $clanid);
 	if (!$teams || !@$teams) {
 		return "<h3>Brawl Teams</h3><p>No brawl teams created!</p>";
 	}
@@ -739,7 +739,7 @@ sub clan_brawl_memberlist {
 	if (!$teamid) {
 		return "Team ID \"$teamid\" is invalid";
 	}
-	my $results = $c->db_select("SELECT team_positions.position, members.id, members.name, members.rank FROM team_positions INNER JOIN members ON members.id = team_positions.member_id WHERE team_positions.team_id = ? ORDER BY team_positions.position", {}, $teamid);
+	my $results = $c->db_select("SELECT team_seats.seat_no, members.id, members.name, members.rank FROM team_seats INNER JOIN members ON members.id = team_seats.member_id WHERE team_seats.team_id = ? ORDER BY team_seats.seat_no", {}, $teamid);
 	my $result = '';
 	if (!$results || !@$results) {
 		$result .= "<p>Team has no roster.</p>";
@@ -751,7 +751,7 @@ sub clan_brawl_memberlist {
 		}
 		$result .= "</ul>";
 	}
-	$results = $c->db_select("SELECT members.id, members.name, members.rank FROM team_members LEFT OUTER JOIN team_positions ON team_positions.team_id = team_members.team_id AND team_positions.member_id = team_members.member_id INNER JOIN members ON members.id = team_members.member_id WHERE team_members.team_id = ? AND team_positions.position IS NULL ORDER BY members.name", {}, $teamid);
+	$results = $c->db_select("SELECT members.id, members.name, members.rank FROM team_members LEFT OUTER JOIN team_seats ON team_seats.team_id = team_members.team_id AND team_seats.member_id = team_members.member_id INNER JOIN members ON members.id = team_members.member_id WHERE team_members.team_id = ? AND team_seats.seat_no IS NULL ORDER BY members.name", {}, $teamid);
 	if (!$results || !@$results) {
 		$result .= "<p>Team has no reserves.</p>";
 	} else {

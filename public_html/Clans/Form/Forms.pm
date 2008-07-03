@@ -158,7 +158,7 @@ brawl_draw => {
 
 		# List of matches that need seats drawn for them.
 		my @matches;
-		if ($draw_made) {
+		if ($p->{draw_made}) {
 			# We're making a draw for round having (hopefully) got all results for the previous one.
 			# First we must figure out the "current" round.
 			$p->{last_round} = $c->db_selectone("SELECT MAX(round) FROM brawl NATURAL JOIN team_match_players WHERE brawl.period_id = ?", {}, $p->{period_id}) || 0;

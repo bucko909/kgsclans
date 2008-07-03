@@ -379,7 +379,7 @@ sub is_clan_member {
 	my $ismember;
 	if ($c->{phpbbsess}{groupids}) {
 		foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
-			$ismember = 1 if $groupid == $clan_info->{forum_group_id} || $groupid == 287;
+			$ismember = 1 if $groupid == $clan_info->{forum_group_id}; # || $groupid == 287;
 		}
 	}
 	return $ismember;
