@@ -1245,7 +1245,7 @@ add_team_match => {
 
 		# Next, ensure that both teams have a complete roster.
 		$p->{chal_seats} = $c->db_selectone("SELECT COUNT(*) FROM team_seats WHERE team_seats.team_id = ?", {}, $p->{chal_team_id});
-		$p->{our_seats} = $c->db_selectone("SELECT COUNT(*) FROM team_seats WHERE team_seats.team_id = ?", {}, $p->{chal_team_id});
+		$p->{our_seats} = $c->db_selectone("SELECT COUNT(*) FROM team_seats WHERE team_seats.team_id = ?", {}, $p->{team_id});
 		if ($p->{chal_seats} != 5) {
 			return (0, "The opposing team does not have a full roster. Please ensure both teams have a full roster before continuing.");
 		} elsif ($p->{our_seats} != 5) {
