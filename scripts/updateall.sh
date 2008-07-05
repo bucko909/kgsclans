@@ -6,10 +6,10 @@ cd /home/kgs
 mysql < scripts/makegrids.sql >> /home/kgs/UPDATE.OUT 2>> /home/kgs/UPDATE.ERR
 
 # Log clan points history
-mysql -se 'INSERT INTO clanpoints_history SELECT UNIX_TIMESTAMP(), id, points FROM clans WHERE clanperiod = 7;'
+mysql -se 'INSERT INTO clanpoints_history SELECT UNIX_TIMESTAMP(), id, points FROM clans WHERE period_id = 7;'
 
 # Ensure forum users are associated properly with their clans.
-mysql -se 'DELETE FROM forumuser_clans; INSERT INTO forumuser_clans SELECT phpbb3_user_group.user_id AS user_id, clans.id AS clan_id, clans.name AS clan_name FROM phpbb3_user_group INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_group_id AND clans.clanperiod = 7;'
+mysql -se 'DELETE FROM forumuser_clans; INSERT IGNORE INTO forumuser_clans SELECT phpbb3_user_group.user_id AS user_id, clans.id AS clan_id, clans.name AS clan_name FROM phpbb3_user_group INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_group_id AND clans.period_id = 7;'
 
 # Nightly backup
 dump1=/home/kgs/dbdumps/dbdump-"`date +%y%m%d-%H%M%S`".sql
