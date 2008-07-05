@@ -815,7 +815,7 @@ change_clan_leader => {
 add_team_game => {
 	brief => 'Add team game',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	category => [ qw/team clan admin/ ],
 	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
 	params => [
 		period_id => {
@@ -881,9 +881,9 @@ add_team_game => {
 
 			$p->{content} = substr($p->{content},0,300);
 
-			if (!$p->{maintime} || $p->{maintime} != 1200) {
+			if (!$p->{maintime} || $p->{maintime} < 1200) {
 				$p->{badrules} = 'maintime';
-			} elsif (!$p->{overtime} || $p->{overtime} ne '30/300 Canadian') {
+			} elsif (!$p->{overtime} || $p->{overtime} !~ m[30/(\d+) Canadian] || $1 < 300) {
 				$p->{badrules} = 'overtime';
 			} elsif (!$p->{komi} || $p->{komi} != 6.5) {
 				$p->{badrules} = 'komi';
@@ -981,7 +981,7 @@ add_team_game => {
 add_clan_member => {
 	brief => 'Add member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	category => [ qw/member clan admin/ ],
 	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
 	params => [
 		period_id => {
@@ -1140,7 +1140,7 @@ remove_clan_member => {
 add_challenge => {
 	brief => 'Challenge a clan',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	category => [ qw/challenge clan admin/ ],
 	description => 'This form allows you to challenge another clan. The other clan can pick which team they respond to (you may want to agree this with them beforehand). They must respond within 2 weekly updates.',
 	params => [
 		period_id => {
@@ -1162,12 +1162,12 @@ add_challenge => {
 			hidden => 1,
 			informational => 1,
 		},
-		chal_id => {
+		cclan_id => {
 			type => 'id_clan($period_id)',
 			brief => 'Clan to challenge',
 			readonly => [],
 		},
-		chal_name => {
+		ccclan_name => {
 			type => 'name_clan($period_id,$chal_id)',
 			hidden => 1,
 			informational => 1,
@@ -1175,25 +1175,42 @@ add_challenge => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		if ($c->db_selectone("SELECT id FROM challenges WHERE challenger_team_id = ? AND challenged_clan_id = ?", {}, $p->{team_id}, $p->{chal_id})) {
+
+		if ($p->{cclan_id} == $p->{clan_id}) {
+			return (0, "You can't challenge your own clan!");
+		}
+
+		if ($c->db_selectone("SELECT id FROM challenges WHERE challenger_team_id = ? AND challenged_clan_id = ?", {}, $p->{team_id}, $p->{cclan_id})) {
 			return (0, "Sorry, you already have an active challenge to that clan for this team.");
 		}
+
+		# Check the challenge makes sense...
+		$p->{chal_seats} = $c->db_selectone("SELECT COUNT(*) AS count FROM team_seats INNER JOIN teams ON team_seats.team_id = teams.id WHERE team_seats.clan_id = ? GROUP BY team_seats.team_id ORDER BY count LIMIT 1", {}, $p->{cclan_id});
+		$p->{our_seats} = $c->db_selectone("SELECT COUNT(*) FROM team_seats WHERE team_seats.team_id = ?", {}, $p->{team_id});
+		if ($p->{chal_seats} != 5) {
+			return (0, "The opposing clan does not have a team with a full roster. Please ensure the opposing clan is ready to meet your challenge.");
+		} elsif ($p->{our_seats} != 5) {
+			return (0, "Your team does not have a full roster. Please ensure your team has a full roster before sending challenges.");
+		}
+
+		# Send challenge.
 		$p->{time} = time();
-		if ($c->db_do("INSERT INTO challenges SET challenger_team_id = ?, challenged_clan_id = ?, challenge_date = ?", {}, $p->{team_id}, $p->{chal_id}, $p->{time})) {
+		if ($c->db_do("INSERT INTO challenges SET challenger_team_id = ?, challenged_clan_id = ?, challenge_date = ?", {}, $p->{team_id}, $p->{cclan_id}, $p->{time})) {
 			$p->{challenge_id} = $c->lastid;
-			$p->{forum_id} = $c->db_selectone("SELECT forum_id FROM clans WHERE id=?", {}, $p->{chal_id});
-			$c->forum_post_or_reply($p->{forum_id}, "Clan Challenges", "Challenge from $p->{clan_name}", $c->render_clan($p->{clan_id}, $p->{clan_name}).qq|'s $p->{team_name} team has challenged your clan to a battle. You must <a href="/admin.pl?form=add_team_match&add_team_match_challenge_id=$p->{challenge_id}&add_team_match_changed=challenge_id&add_team_match_accept=Yes">accept</a> or <a href="/admin.pl?form=add_team_match&add_team_match_challenge_id=$p->{challenge_id}&add_team_match_changed=challenge_id&add_team_match_accept=No">decline</a> within a week or get a penalty of 5 points.|, "00000000");
+			$p->{forum_id} = $c->db_selectone("SELECT forum_id FROM clans WHERE id=?", {}, $p->{cclan_id});
+			($p->{post_id}, $p->{topic_id}) = $c->forum_post_or_reply($p->{forum_id}, "Clan Challenges", "Challenge from $p->{clan_name}", $c->render_clan($p->{clan_id}, $p->{clan_name}).qq|'s $p->{team_name} team has challenged your clan to a battle. You must <a href="/admin.pl?form=accept_challenge&accept_challenge_challenge_id=$p->{challenge_id}&accept_challenge_changed=challenge_id">accept</a> or <a href="/admin.pl?form=decline_challenge&decline_challenge_challenge_id=$p->{challenge_id}&decline_challenge_changed=challenge_id">decline</a> within a week or get a penalty of 5 points.|, "00000000");
+			$c->db_do("UPDATE challenges SET forum_post_id = ? WHERE id = ?", {}, $p->{post_id}, $p->{challenge_id});
 			return (1, "OK; sent challenge.");
 		} else {
 			return (0, "Database error.");
 		}
 	},
 },
-add_team_match => {
-	brief => 'Accept or decline a challenge',
+accept_challenge => {
+	brief => 'Accept a challenge',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/team clan admin/ ],
-	description => 'This form allows you to add a new team for your clan. Note that it currently does not check you have met the requirements for entering teams into the brawl, so even if you can add a team it doesn\'t mean it will be entered into the brawl.',
+	category => [ qw/challenge team clan admin/ ],
+	description => 'This form allows you to accept a challenge sent to your clan.',
 	params => [
 		period_id => {
 			type => 'id_period',
@@ -1208,7 +1225,7 @@ add_team_match => {
 		},
 		challenge_id => {
 			type => 'id_challenge($period_id,$clan_id)',
-			brief => 'Challenge to accept/decline'
+			brief => 'Challenge to accept'
 		},
 		team_id => {
 			type => 'id_team($period_id,$clan_id)',
@@ -1219,24 +1236,13 @@ add_team_match => {
 			hidden => 1,
 			informational => 1,
 		},
-		accept => {
-			type => 'enum(Yes,No)',
-			brief => 'Accept the challenge?',
-		},
 	],
 	action => sub {
 		my ($c, $p) = @_;
 
-		if ($p->{accept} eq 'No') {
-			if (!$c->db_do("DELETE FROM challenges WHERE id = ?", {}, $p->{challenge_id})) {
-				return (0, "Database error deleting challenge.");
-			} else {
-				return (1, "OK, you declined the challenge.");
-			}
-		}
-
 		$p->{time} = time();
 		$p->{chal_team_id} = $c->db_selectone("SELECT challenger_team_id FROM challenges WHERE id = ?", {}, $p->{challenge_id});
+		$p->{post_id} = $c->db_selectone("SELECT forum_post_id FROM challenges WHERE id = ?", {}, $p->{challenge_id});
 
 		# First, ensure there are no scheduling conflicts
 		if ($c->db_selectone("SELECT tm1.member_id FROM team_seats ts1 INNER JOIN team_seats ts2 INNER JOIN team_match_players tm1 ON ts1.member_id = tm1.member_id INNER JOIN team_match_players tm2 ON ts2.member_id = tm2.member_id AND tm1.team_match_id = tm2.team_match_id AND tm1.seat_no = tm2.seat_no INNER JOIN team_match_seats ts ON ts.team_match_id = tm1.team_match_id AND ts.seat_no = tm1.seat_no WHERE ts.winner IS NULL AND ts1.team_id = ? AND ts2.team_id = ?", {}, $p->{chal_team_id}, $p->{team_id})) {
@@ -1260,17 +1266,62 @@ add_team_match => {
 		$c->db_do("INSERT INTO team_match_teams SET team_match_id = ?, team_no = 2, team_id = ?", {}, $p->{match_id}, $p->{team_id}) or return (0, "Database error.");
 		$p->{offset} = int(rand()*2)%2;
 		for(0..4) {
-			$c->db_do("INSERT INTO team_match_seats SET team_match_id = ?, seat_no = ?, black = ?", {}, $p->{match_id}, $_, 2 - ($p->{offset} + $_) % 2) or return (0, "Database error.");
+			$c->db_do("INSERT INTO team_match_seats SET team_match_id = ?, seat_no = ?, black = ?", {}, $p->{match_id}, $_, 2 - (($p->{offset} + $_) % 2)) or return (0, "Database error.");
 		}
-		$c->db_do("INSERT INTO team_match_players SELECT team_match_seats.team_match_id, team_no, team_match_seats.seat_no, team_seats.member_id FROM team_match_seats INNER JOIN team_match_teams ON team_match_seats.team_match_id = team_match_teams.team_match_id INNER JOIN team_seats ON team_seats.team_id = team_match_teams.team_id AND team_seats.seat_no = team_match_seats.seat_no WHERE team_match_seats.team_match_id = ?", {}, $p->{match_id}) or return (0, "Database error.");
+		$c->db_do("INSERT INTO team_match_players SELECT team_match_seats.team_match_id, team_no, team_match_seats.seat_no, team_seats.member_id FROM team_match_seats INNER JOIN team_match_teams ON team_match_seats.team_match_id = team_match_teams.team_match_id INNER JOIN team_seats ON team_seats.team_id = team_match_teams.team_id AND team_seats.seat_no = team_match_seats.seat_no WHERE team_match_seats.team_match_id = ?", {}, $p->{match_id}) or return (0, "Database error.") or return (0, "Database error.");
+
+		# Also update the forum post.
+		if ($p->{post_id}) {
+			$p->{user_name} = $c->db_selectone("SELECT username FROM phpbb3_users WHERE user_id = ?", {}, $c->{userid});
+			$c->db_do(qq|UPDATE phpbb3_posts SET post_content = CONCAT(post_content, "\n\nThis challenge was accepted by $p->{user_name} using team $p->{team_name}.") WHERE post_id = ?|, {}, $p->{post_id}) or return (0, "Database error.");
+		}
 		
 		return (1, "OK; accepted challenge.");
 	},
 },
-add_clan_team => {
+decline_challenge => {
+	brief => 'Decline a challenge',
+	checks => 'clan_moderator($clan_id)|period_active($period_id)',
+	category => [ qw/challenge clan admin/ ],
+	description => 'This form allows you to accept a challenge sent to your clan.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		challenge_id => {
+			type => 'id_challenge($period_id,$clan_id)',
+			brief => 'Challenge to decline'
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		# Update the forum post.
+		$p->{post_id} = $c->db_selectone("SELECT forum_post_id FROM challenges WHERE id = ?", {}, $p->{challenge_id});
+		if ($p->{post_id}) {
+			$p->{user_name} = $c->db_selectone("SELECT username FROM phpbb3_users WHERE user_id = ?", {}, $c->{userid});
+			$c->db_do(qq|UPDATE phpbb3_posts SET post_content = CONCAT(post_content, "\n\nThis challenge was declined by $p->{user_name}.") WHERE post_id = ?|, {}, $p->{post_id}) or return (0, "Database error.");
+		}
+		
+		if (!$c->db_do("DELETE FROM challenges WHERE id = ?", {}, $p->{challenge_id})) {
+			return (0, "Database error deleting challenge.");
+		} else {
+			return (1, "OK, you declined the challenge.");
+		}
+	},
+},
+add_team => {
 	brief => 'Add team',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
-	category => [ qw/clan admin/ ],
+	category => [ qw/team clan admin/ ],
 	description => 'This form allows you to add a new team for your clan. Note that it currently does not check you have met the requirements for entering teams into the brawl, so even if you can add a team it doesn\'t mean it will be entered into the brawl.',
 	params => [
 		period_id => {
@@ -1293,13 +1344,14 @@ add_clan_team => {
 		my ($c, $p) = @_;
 		$p->{top_team} = $c->db_selectone("SELECT MAX(team_number) FROM teams WHERE clan_id = ?", {}, $p->{clan_id});
 		if ($c->db_do('INSERT INTO teams SET name=?, clan_id=?, team_number=?', {}, $p->{team_name}, $p->{clan_id}, $p->{top_team}+1)) {
+			$p->{team_id} = $c->lastid;
 			return (1, "Added new team.");
 		} else {
 			return (0, "Database error.");
 		}
 	},
 },
-change_clan_team_order => {
+change_team_order => {
 	brief => 'Change order of teams',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
 	category => [ qw/team clan admin/ ],
@@ -1346,7 +1398,7 @@ change_clan_team_order => {
 		return (1, "Altered order of teams.");
 	},
 },
-change_clan_team_name => {
+change_team_name => {
 	brief => 'Change team name',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
 	category => [ qw/team clan admin/ ],
@@ -1386,7 +1438,7 @@ change_clan_team_name => {
 		}
 	},
 },
-remove_clan_team => {
+remove_team => {
 	brief => 'Remove team',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
 	category => [ qw/team clan admin/ ], 
@@ -1483,6 +1535,66 @@ remove_member_from_team => {
 		}
 	},
 },
+change_team_members => {
+	brief => 'Select team members',
+	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
+	category => [ qw/team clan admin/ ],
+	description => 'Here you can add members to a team.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		team_id => {
+			type => 'id_team($period_id,$clan_id)',
+		},
+		team_name => {
+			type => 'name_team($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		member_id => {
+			type => 'filter_qualified|id_member($period_id,$clan_id):list_default|id_member($period_id,$clan_id,$team_id)',
+			multi => 1,
+			brief => 'New team member list',
+			description => 'You can hold Ctrl to select multiple members',
+		},
+		member_name => {
+			type => 'name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
+			multi => 1,
+			multi_col => 'member_id',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		# Clear team rosters as appropriate.
+		$c->db_do('DELETE FROM team_members WHERE team_id = ?', {}, $p->{team_id});
+		# XXX not using prepare properly.
+		$c->db_do('DELETE FROM team_members WHERE member_id IN('.join(',',@{$p->{member_id}}).')');
+
+		# Check each member has the points
+		$p->{max_members} = $c->get_option('BRAWLTEAMMAXMEMBERS', $p->{period_id});
+		if (@{$p->{member_id}} > $p->{max_members}) {
+			return (0, "Too many members selected.");
+		}
+		for(@{$p->{member_id}}) {
+			if (!$c->db_do('INSERT INTO team_members SET team_id=?, member_id=?', {}, $p->{team_id}, $_)) {
+				return (0, "Database error.");
+			}
+		}
+		return (1, "Set complete team roster.");
+	},
+},
 add_member_to_team => {
 	brief => 'Add member to team',
 	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
@@ -1537,8 +1649,8 @@ add_member_to_team => {
 		}
 	},
 },
-change_team_pos => {
-	brief => 'Change position of team members',
+change_team_seat => {
+	brief => 'Change seat of team member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	category => [ qw/team member clan admin/ ],
 	description => 'Choose the lineup for your teams here.',
@@ -1562,7 +1674,7 @@ change_team_pos => {
 			hidden => 1,
 			informational => 1,
 		},
-		old_positions => {
+		old_seats => {
 			type => 'positions_team($period_id,$clan_id,$team_id)',
 			html => 1,
 			informational => 1,
@@ -1576,7 +1688,7 @@ change_team_pos => {
 			hidden => 1,
 			informational => 1,
 		},
-		pos_id => {
+		seat_no => {
 			type => 'null_valid|enum(1,2,3,4,5)',
 			brief => 'Position',
 		}
@@ -1584,11 +1696,11 @@ change_team_pos => {
 	action => sub {
 		my ($c, $p) = @_;
 		$c->db_do('DELETE FROM team_seats WHERE member_id = ?', {}, $p->{member_id});
-		if (!$p->{pos_id}) {
+		if (!$p->{seat_no}) {
 			# That's it in this case.
 			return (1, "Member will no longer be playing in the next round.");
 		}
-		if (!$c->db_do('INSERT INTO team_seats SET team_id=?, member_id=?, seat_no=?', {}, $p->{team_id}, $p->{member_id}, $p->{pos_id}-1)) {
+		if (!$c->db_do('INSERT INTO team_seats SET team_id=?, member_id=?, seat_no=?', {}, $p->{team_id}, $p->{member_id}, $p->{seat_no}-1)) {
 			return (0, "Database error.");
 		} else {
 			return (1, "Changed member's team position.");
@@ -1680,10 +1792,10 @@ change_member_rank => {
 		}
 	},
 },
-add_member_alias => {
+add_kgs_username => {
 	brief => 'Add KGS username to member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/member clan admin/ ], 
+	category => [ qw/alias member clan admin/ ], 
 	description => 'If a member has several names on KGS, you can add them all here. Please keep this below 3 names per member, as each name adds time to the nightly update and places load on KGS\'s servers.',
 	params => [
 		period_id => {
@@ -1724,6 +1836,7 @@ add_member_alias => {
 		if (!$c->db_do('INSERT INTO kgs_usernames SET nick=?, member_id=?, period_id=?, activity=?', {}, $p->{member_alias}, $p->{member_id}, $p->{period_id}, $p->{time})) {
 			return (0, "Database error.");
 		} else {
+			$p->{alias_id} = $c->lastid;
 			if (!$p->{was_active}) {
 				if (!$c->db_do('UPDATE members SET active=1 WHERE id=?', {}, $p->{member_id})) {
 					return (0, "Database error setting active status.");
@@ -1733,7 +1846,7 @@ add_member_alias => {
 		}
 	},
 },
-remove_member_alias => {
+remove_kgs_username => {
 	brief => 'Remove KGS username from member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	category => [ qw/alias member clan admin/ ],

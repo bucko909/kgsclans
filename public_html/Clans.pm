@@ -396,7 +396,12 @@ sub log {
 	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?, time = ?", {}, $action, $status, $message, $this->{userid}, time());
 	my $id = $this->lastid;
 	for my $param_name (keys %$params) {
-		$this->db_do("INSERT INTO log_params SET log_id = ?, param_name = ?, param_value = ?", {}, $id, $param_name, $params->{$param_name});
+		my $param_value = $params->{$param_name};
+		if ($param_value && ref $param_value) {
+			$this->db_do("INSERT INTO log_params SET log_id = ?, param_name = ?, param_value = ?", {}, $id, $param_name, join(',', @$param_value));
+		} else {
+			$this->db_do("INSERT INTO log_params SET log_id = ?, param_name = ?, param_value = ?", {}, $id, $param_name, $params->{$param_name});
+		}
 	}
 }
 
@@ -487,23 +492,24 @@ sub list {
 }
 
 sub forum_post_or_reply {
-	my ($this, $forum, $topic_title, $title, $content, $uuid, $post_time) = @_;
+	my ($this, $forum_id, $topic_title, $title, $content, $uuid, $post_time) = @_;
 	$post_time ||= time();
 	$content =~ s/<a href="(http.*?)">(.*?)<\/a>/\[url=$1\]$2\[\/url\]/g;
 	$content =~ s/<a href="(.*?)">(.*?)<\/a>/\[url=http:\/\/www.kgsclans.co.uk\/$1:$uuid\]$2\[\/url:$uuid\]/g;
-	my $topic = $this->db_selectone("SELECT topic_id FROM phpbb3_topics WHERE forum_id = ? AND topic_poster = 53 AND topic_title = ?", {}, $forum, $topic_title);
+	my $topic_id = $this->db_selectone("SELECT topic_id FROM phpbb3_topics WHERE forum_id = ? AND topic_poster = 53 AND topic_title = ?", {}, $forum_id, $topic_title);
 	my $new;
-	if (!$topic) {
-		$topic = $this->forum_new_thread($forum, $topic_title, $post_time);
+	if (!$topic_id) {
+		$topic_id = $this->forum_new_thread($forum_id, $topic_title, $post_time);
 		$new = 1;
 	}
-	$this->db_do("INSERT INTO phpbb3_posts SET topic_id = ?, forum_id = ?, poster_id = ?, post_time = ?, enable_smilies = 0, post_subject = ?, post_text = ?, bbcode_uid = ?, bbcode_bitfield = ?", {}, $topic, $forum, 53, $post_time, $title, $content, $uuid, "MEA=") or die;
+	$this->db_do("INSERT INTO phpbb3_posts SET topic_id = ?, forum_id = ?, poster_id = ?, post_time = ?, enable_smilies = 0, post_subject = ?, post_text = ?, bbcode_uid = ?, bbcode_bitfield = ?", {}, $topic_id, $forum_id, 53, $post_time, $title, $content, $uuid, "MEA=") or die;
 	my $post_id = $this->lastid;
 	if ($new) {
-		$this->db_do("UPDATE phpbb3_topics SET topic_first_post_id = ?, topic_first_poster_name = ? WHERE topic_id = ?", {}, $post_id, "Clans System", $topic) or die;
+		$this->db_do("UPDATE phpbb3_topics SET topic_first_post_id = ?, topic_first_poster_name = ?, topic_replies = -1, topic_replies_real = -1 WHERE topic_id = ?", {}, $post_id, "Clans System", $topic_id) or die;
 	}
-	$this->db_do("UPDATE phpbb3_topics SET topic_last_post_id = ?, topic_last_post_time = ?, topic_last_post_subject = ?, topic_last_poster_id = ?, topic_last_poster_name = ?, topic_replies_real = topic_replies_real + 1, topic_replies = topic_replies + 1 WHERE topic_id = ?", {}, $post_id, $post_time, $title, 53, "Clans System", $topic) or die;
-	$this->db_do("UPDATE phpbb3_forums SET forum_last_post_id = ?, forum_last_post_time = ?, forum_last_post_subject = ?, forum_last_poster_id = ?, forum_last_poster_name = ? WHERE forum_id = ?", {}, $post_id, $post_time, $topic_title, 53, "Clans System", $forum) or die;
+	$this->db_do("UPDATE phpbb3_topics SET topic_last_post_id = ?, topic_last_post_time = ?, topic_last_post_subject = ?, topic_last_poster_id = ?, topic_last_poster_name = ?, topic_replies_real = topic_replies_real + 1, topic_replies = topic_replies + 1 WHERE topic_id = ?", {}, $post_id, $post_time, $title, 53, "Clans System", $topic_id) or die;
+	$this->db_do("UPDATE phpbb3_forums SET forum_last_post_id = ?, forum_last_post_time = ?, forum_last_post_subject = ?, forum_last_poster_id = ?, forum_last_poster_name = ? WHERE forum_id = ?", {}, $post_id, $post_time, $topic_title, 53, "Clans System", $forum_id) or die;
+	return wantarray ? ($post_id, $topic_id) : $post_id;
 }
 
 sub forum_new_thread {

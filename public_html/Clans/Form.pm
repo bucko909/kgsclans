@@ -212,13 +212,21 @@ sub fill_values {
 		# change the value.)
 		my $value;
 		if (defined($value = $c->param($name.'_auto_'.$param_name))) {
-			$info->{auto_value} = $value;
+			if (is('multi', $info, 'admin')) {
+				$info->{auto_value} = [ $c->param($name.'_auto_'.$param_name) ];
+			} else {
+				$info->{auto_value} = $value;
+			}
 		}
 
 		# Do we have a value for this param supplied by the form?
 		if (defined($value = $c->param($name.'_'.$param_name))) {
 			if (!exists $info->{auto_value} || $info->{auto_value} ne $value) {
-				$info->{user_value} = $value;
+				if (is('multi', $info, 'admin')) {
+					$info->{user_value} = [ $c->param($name.'_'.$param_name) ];
+				} else {
+					$info->{user_value} = $value;
+				}
 			}
 		}
 
@@ -238,6 +246,7 @@ sub fill_values {
 		}
 
 		$info->{value} = exists $info->{user_value} ? $info->{user_value} : $info->{auto_value};
+		$info->{value} ||= [] if is('multi',$info,'admin');
 		if (my $reason = &bad_value($c, $info, \$info->{value}, $output_params_info)) {
 			$reasons{$param_name} = "Value for $param_name was invalid ($reason).";
 		}
@@ -279,6 +288,7 @@ sub fill_values {
 	# We must now work out value ranges for every element if we can.
 	foreach my $param_name (@$output_params) {
 		my $info = $output_params_info->{$param_name};
+		my $multi = is('multi', $info, 'admin');
 		foreach my $type_info (@{$info->{types}}) {
 			# If the user updated any of our checking parameters, take this as
 			# an indication that any default parameter should override even
@@ -289,50 +299,97 @@ sub fill_values {
 				delete $info->{user_value};
 				delete $info->{auto_value};
 				delete $info->{value};
+				$reasons{$param_name} ||= 'Inferred value from another choice.';
 			}
 
 			my @params = @{$type_info->{params}};
 
 			# Replace all $ params with user-supplied values, if we have them.
-			s/\$(\w+)/my $val = $output_params_info->{$1}{value}; defined $val ? $val : ""/eg foreach(@params);
+			s/\$(\w+)/my $val = $output_params_info->{$1}{value}; $val = ref $val ? $val->[0] : $val; defined $val ? $val : ""/eg foreach(@params);
+
 
 			# If we have enough information at this point to determine the DB
 			# value of this field, we fill it in, but don't override
 			# user-supplied params if they exist. (This is normally just
 			# pre-filling text fields).
 			if (my $get_fn = $type_info->{definition}{get}) {
-				my $getval = $get_fn->($c, @params);
-				if ($getval) {
-					$info->{auto_value} = $getval;
+				if ($multi) {
+					$info->{auto_value} = [];
+					if (my $multi_col = $info->{forms_info}{multi_col}) {
+						for my $temp_val (@{$output_params_info->{$multi_col}{value}||[]}) {
+							local $output_params_info->{$multi_col}{value} = $temp_val;
+							my @params = @{$type_info->{params}};
+							s/\$(\w+)/my $val = $output_params_info->{$1}{value}; defined $val ? $val : ""/eg foreach(@params);
+							push @{$info->{auto_value}}, $get_fn->($c, @params);
+						}
+					}
 					$info->{value} = $info->{auto_value} unless exists $info->{user_value};
+				} else {
+					my $getval = $get_fn->($c, @params);
+					if ($getval) {
+						$info->{auto_value} = $multi ? [ $getval ] : $getval;
+						$info->{value} = $info->{auto_value} unless exists $info->{user_value};
+					}
 				}
+			}
+
+			if (is('hidden',$info,'admin') || is('informational',$info,'admin') || is('readonly',$info,'admin')) {
+				# These param types cannot be pulled from the nth in a list,
+				# and no list will ever be displayed, so we can stop here.
+				next;
 			}
 
 			# It may be that we have enough information to produce a list of
 			# possibilities. (This is pretty normal for ids.) If we can, get
 			# that list now. If the list already exists, we must union it.
+			my @value_list;
 			if ((my $list_fn = $type_info->{definition}{list}) && !$type_info->{valid_new}) {
-				my $new_vals = $list_fn->($c, @params);
+				@value_list = @{$list_fn->($c, @params)||[]};
+				if (@{$type_info->{filter}}) {
+					for my $filter_name (@{$type_info->{filter}}) {
+						my $filter = $type_info->{definition}{$filter_name};
+						@value_list = grep { $filter->($c, \@params, [ @$_[0,2..$#$_] ]) } @value_list if $filter;
+					}
+				}
 				# If null is valid, we can place it in the list at the top.
-				unshift @$new_vals, [ "", "None" ] if $new_vals && $type_info->{null_valid};
-				if ($info->{value_list} && $new_vals) {
+				unshift @value_list, [ "", "None" ] if $type_info->{null_valid};
+			}
+
+			if ($type_info->{list_default}) {
+				# Use this as the defaults.
+				if ($multi && !@{$info->{value}}) {
+					$info->{auto_value} = [map { $_->[0] } @value_list];
+					$info->{value} = $info->{auto_value};
+				}
+			} else {
+				# Intersect the results.
+				if ($info->{value_list} && @value_list) {
 					my %temp;
 					$temp{$_->[0]} = -1 foreach(@{$info->{value_list}});
 					my @list_vals;
-					push @list_vals, $_ foreach(grep { $temp{$_->[0]} } @$new_vals);
+					push @list_vals, $_ foreach(grep { $temp{$_->[0]} } @value_list);
 					$info->{value_list} = \@list_vals;
-				} elsif ($new_vals) {
-					$info->{value_list} = $new_vals;
+				} elsif (@value_list) {
+					$info->{value_list} = \@value_list;
 				}
 			}
+
 		}
 
 		# If this has a list and the current value isn't in it, remove it now.
 		if ($info->{value_list} && defined $info->{value}) {
-			if (!grep { $_->[0] eq $info->{value} } @{$info->{value_list}}) {
-				delete $info->{user_value};
-				delete $info->{auto_value};
-				undef $info->{value};
+			if ($multi) {
+				my $oldsize = scalar @{$info->{user_value}||[]};
+				@{$info->{user_value}} = grep { my $v = $_; grep { $_->[0] eq $v } @{$info->{value_list}} } @{$info->{user_value}} if $info->{user_value};
+				@{$info->{auto_value}} = grep { my $v = $_; grep { $_->[0] eq $v } @{$info->{value_list}} } @{$info->{auto_value}} if $info->{auto_value};
+				$reasons{$param_name} ||= "$oldsize invalid value(s) detected; removing." if $oldsize != scalar @{$info->{user_value}||[]};
+			} else {
+				if (!grep { $_->[0] eq $info->{value} } @{$info->{value_list}}) {
+					delete $info->{user_value};
+					delete $info->{auto_value};
+					undef $info->{value};
+					$reasons{$param_name} ||= 'Invalid value detected; removing.';
+				}
 			}
 		}
 
@@ -389,16 +446,31 @@ sub output_form {
 		my $hidden = is('hidden', $info, $category);
 		my $informational = is('informational', $info, $category);
 		my $override = is('override', $info, $category);
+		my $multi = is('multi', $info, $category);
 		if ($override && !exists $info->{value}) {
 			# Overrides are only visible once they are enabled.
 			next;
 		}
-		$output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($info->{auto_value}||"").qq|"/>| unless $override || $informational;
+		if (!$informational) {
+			if ($multi) {
+				for my $value (@{$value||[]}) {
+					$hidden_output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+				}
+			} else {
+				$hidden_output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+			}
+		}
 		my $html = is('html', $info, $category);
 		if ($hidden) {
 			# This element is hidden at this level. Informational elements need no content generating at all.
 			if (!$informational) {
-				$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+				if ($multi) {
+					for my $value (@{$value||[]}) {
+						$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+					}
+				} else {
+					$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+				}
 			}
 		} else {
 			# Visible form element
@@ -431,7 +503,13 @@ sub output_form {
 					$output .= qq|<td class="readonly">|.$c->escapeHTML($value_display).qq|</td></tr>|;
 				}
 				if (!$informational) {
-					$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+					if ($multi) {
+						for my $value (@{$value||[]}) {
+							$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+						}
+					} else {
+						$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+					}
 				}
 				next;
 			}
@@ -448,10 +526,21 @@ sub output_form {
 			} elsif ($info->{value_list}) {
 				# Since we have a list of valid values, we make a <select>
 				my $update_str = $info->{force_update} ? qq| onchange="document.$qname.process.value='';document.$qname.$qname\_changed.value='$qparam_name';document.$qname.submit();"| : "";
-				$output .= qq|<select name="$qname\_$qparam_name"$update_str>|;
+				if ($multi) {
+					my $size = int(@{$info->{value_list}||[]} / 2)+1;
+					$size = 3 if $size < 3;
+					$output .= qq|<select multiple="multiple" size="$size" name="$qname\_$qparam_name"$update_str>|;
+				} else {
+					$output .= qq|<select name="$qname\_$qparam_name"$update_str>|;
+				}
 				# TODO getting undef in names here...
 				foreach my $valid_item (@{$info->{value_list}}) {
-					my $selected = ($value && $value eq $valid_item->[0]) ? qq| selected="selected"| : "";
+					my $selected;
+					if ($multi) {
+						$selected = (grep { $_ eq $valid_item->[0] } @$value) ? qq| selected="selected"| : "";
+					} else {
+						$selected = ($value && $value eq $valid_item->[0]) ? qq| selected="selected"| : "";
+					}
 					$output .= qq|<option value="|.$c->escapeHTML($valid_item->[0]).qq|"$selected>|.$c->escapeHTML($valid_item->[1]).qq|</option>| if $valid_item->[1];
 				}
 				$output .= "</select>";
@@ -468,12 +557,16 @@ sub output_form {
 			}
 			if ($reasons && $reasons->{$param_name}) {
 				$output .= qq|</td><td class="form_error">|.$c->escapeHTML($reasons->{$param_name});
+				delete $reasons->{$param_name};
 			}
 			$output .= qq|</td></tr>|;
 		}
 	}
 	$output .= qq|</table>|;
 	$output .= $hidden_output;
+	for my $param_name (keys %$reasons) {
+		$output .= "<p>Internal error: $param_name was bad for reason: $reasons->{$param_name}</p>";
+	}
 	$output .= qq|<input type="submit" name="$qname\_submit" value="Submit"/>|;
 	$output .= qq|</form>|;
 	return $output;
@@ -519,24 +612,29 @@ sub parse_form_def {
 
 			# Before we treat them destructively, copy the parameters.
 			$type_info->{params} = [@params];
+			$type_info->{type} = $type;
+			$type_info->{definition} = $input_tests{$type};
+
 
 			# If we have any checks depending on other parameters, those
 			# parameters will cause the form to update. Make sure we note this.
-			foreach (@params) {
-				while (/\$(\w+)/g) {
-					$output_params_info{$1} ||= {};
-					$output_params_info{$1}{force_update} ||= {};
-					$output_params_info{$1}{force_update}{$param_name} = 1;
+			# Of course, if they're informational, we don't really care.
+			if (!is('informational',$info,'admin')) { 
+				foreach (@params) {
+					while (/\$(\w+)/g) {
+						$output_params_info{$1} ||= {};
+						$output_params_info{$1}{force_update} ||= {};
+						$output_params_info{$1}{force_update}{$param_name} = 1;
+					}
 				}
 			}
-
-			$type_info->{type} = $type;
-			$type_info->{definition} = $input_tests{$type};
 
 			# Set up some flags.
 			$type_info->{null_valid} = 1 if grep /^null_valid$/, @mods;
 			$type_info->{valid_new} = 1 if grep /^valid_new$/, @mods;
 			$type_info->{valid} = 1 if grep /^valid$/, @mods;
+			$type_info->{list_default} = 1 if grep /^list_default$/, @mods;
+			$type_info->{filter} = [ grep /^filter_/, @mods ];
 
 			# Null is valid if it's valid for /all/ types.
 			if (!$type_info->{null_valid}) {
@@ -567,47 +665,55 @@ sub bad_value {
 		my @params = @{$type->{params}};
 		s/\$(\w+)/my $val = $params_info->{$1}{value}; defined $val ? $val : ""/eg foreach(@params);
 
-		if (my $modify = $type->{definition}{modify}) {
-			local $_ = $$value;
-			$modify->($c, @params);
-			$$value = $_;
-		}
-
-		# Null values are trivial to deal with. However, must check after above
-		# since, for instance, the default type will set defaults.
-		if (!$type->{null_valid}) {
-			if (!$$value) {
-				if (my $default = $type->{definition}{default}) {
-					$$value = $default->($c, @params);				
-				}
+		for my $value (ref $$value ? map { \$_ } @$$value : $value) {
+			if ($type->{list_default}) {
+				# This type is used only to default lists, so skip it.
+				next;
 			}
 
-			if (!$$value) {
-				return "must not be empty";
-			}
-		} elsif (!$$value) {
-			return undef;
-		}
-
-		if (my $check = $type->{definition}{check}) {
-			local $_ = $$value;
-			my $ret = $check->($c, @params);
-			if (!$ret) {
-				return "invalid value";
-			}
-		}
-
-		if ($check_exists) {
-			if (my $exists = $type->{definition}{exists}) {
+			if (my $modify = $type->{definition}{modify}) {
 				local $_ = $$value;
-				my $ret = $exists->($c, @params);
-				if ($ret && $must_not_exist) {
-					return "cannot use an existing value";
-				} elsif (!$ret && $must_exist) {
-					return "must use an existing value ($_)";
+				$modify->($c, @params);
+				$$value = $_;
+			}
+
+			# Null values are trivial to deal with. However, must check after above
+			# since, for instance, the default type will set defaults.
+			if (!$type->{null_valid}) {
+				if (!$$value) {
+					if (my $default = $type->{definition}{default}) {
+						$$value = $default->($c, @params);
+						return "no value specified; default picked";
+					}
 				}
-			} elsif (!exists $type->{definition}{exists}) {
-				return "existence check requested but none available";
+
+				if (!$$value) {
+					return "must not be empty";
+				}
+			} elsif (!$$value) {
+				next;
+			}
+
+			if (my $check = $type->{definition}{check}) {
+				local $_ = $$value;
+				my $ret = $check->($c, @params);
+				if (!$ret) {
+					return "invalid value";
+				}
+			}
+
+			if ($check_exists) {
+				if (my $exists = $type->{definition}{exists}) {
+					local $_ = $$value;
+					my $ret = $exists->($c, @params);
+					if ($ret && $must_not_exist) {
+						return "cannot use an existing value";
+					} elsif (!$ret && $must_exist) {
+						return "must use an existing value ($_)";
+					}
+				} elsif (!exists $type->{definition}{exists}) {
+					return "existence check requested but none available";
+				}
 			}
 		}
 	}
