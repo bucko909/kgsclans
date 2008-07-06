@@ -551,11 +551,13 @@ sub brawl_battle {
 				$output .= qq|<td></td>|;
 				next;
 			}
-			my $class;
+			my $class = "";
 			if ($member->[5]) {
-				$class = "player_black";
-			} else {
-				$class = "player_white";
+				if ($member->[5] == $team_no) {
+					$class = "player_black";
+				} else {
+					$class = "player_white";
+				}
 			}
 			if ($member->[6]) {
 				if ($member->[6] == $team_no) {

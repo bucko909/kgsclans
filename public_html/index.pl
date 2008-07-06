@@ -701,7 +701,7 @@ sub main_drawtable {
 	return $table;
 }
 
-sub clan_brawllist {
+sub clan_teamlist {
 	my ($c, $clanid) = @_;
 	if (!$clanid || $clanid =~ /[^0-9]/) {
 		if ($c->{clan_info}) {
@@ -711,30 +711,43 @@ sub clan_brawllist {
 			return "Clan ID \"$clanid\" is invalid";
 		}
 	}
+	my $mod_of = $c->is_clan_moderator;
 	my $teams = $c->db_select("SELECT teams.id, name, team_number, COUNT(member_id) FROM teams LEFT OUTER JOIN team_seats ON teams.id = team_seats.team_id AND seat_no >= 0 AND seat_no <= 4 WHERE clan_id = ? GROUP BY teams.id ORDER BY team_number", {}, $clanid);
-	if (!$teams || !@$teams) {
-		return "<h3>Brawl Teams</h3><p>No brawl teams created!</p>";
+	my $out = '<h3>Teams</h3>';
+	if ($mod_of && $mod_of != $clanid && @$teams) {
+		$out .= qq|<p><a href="admin.pl?form=add_challenge&amp;add_challenge_category=clan&amp;add_challenge_cclan_id=$clanid">Challenge this clan to a match</a>.</p>|;
 	}
-	my $out = '<h3>Brawl Teams</h3>';
-	for(@$teams) {
-		$out .= "<h4>Team $_->[2]: ";
-		$out .= $_->[1] ? $_->[1] : "Main";
-		if ($_->[3] == 5) {
-			$out .= " (ready for brawl)";
-		} else {
-			$out .= " (some brawl positions unallocated)";
+	if ($c->is_admin || ($mod_of && $mod_of == $clanid)) {
+		my $challenges = $c->db_select("SELECT challenges.id, teams.name, clans.id, clans.name FROM challenges INNER JOIN teams ON teams.id = challenger_team_id INNER JOIN clans ON clans.id = teams.clan_id WHERE challenged_clan_id = ?", {}, $clanid);
+		if (@$challenges) {
+			$out .= "<p>Unanswered challenges:</p><ul>";
+			$out .= qq|<li>From |.$c->escapeHTML($_->[1]).' ('.$c->render_clan($_->[2], $_->[3]).qq|): <a href="admin.pl?form=accept_challenge&amp;accept_challenge_category=clan&amp;accept_challenge_challenge_id=$_->[0]&amp;accept_challenge_changed=challenge_id">Accept</a> or <a href="admin.pl?form=decline_challenge&amp;decline_challenge_category=clan&amp;decline_challenge_challenge_id=$_->[0]&amp;decline_challenge_changed=challenge_id">decline</a>.</li>| for(@$challenges);
+			$out .= "</ul>";
 		}
-		$out .= "</h4>";
-		if ($c->is_clan_member($clanid)) {
-			$out .= clan_brawl_memberlist($c, $_->[0]);
-		} else {
-			$out .= clan_brawl_public_memberlist($c, $_->[0]);
+	}
+	if (@$teams) {
+		for(@$teams) {
+			$out .= "<h4>Team $_->[2]: ";
+			$out .= $_->[1] ? $_->[1] : "Main";
+			if ($_->[3] == 5) {
+				$out .= " (ready for matches)";
+			} else {
+				$out .= " (some seats unallocated)";
+			}
+			$out .= "</h4>";
+			if ($c->is_clan_member($clanid)) {
+				$out .= clan_team_memberlist($c, $_->[0]);
+			} else {
+				$out .= clan_team_public_memberlist($c, $_->[0]);
+			}
 		}
+	} else {
+		$out .= "<p>No teams created!</p>";
 	}
 	return $out;
 }
 
-sub clan_brawl_memberlist {
+sub clan_team_memberlist {
 	my ($c, $teamid) = @_;
 	if (!$teamid) {
 		return "Team ID \"$teamid\" is invalid";
@@ -765,7 +778,7 @@ sub clan_brawl_memberlist {
 	return $result;
 }
 
-sub clan_brawl_public_memberlist {
+sub clan_team_public_memberlist {
 	my ($c, $teamid) = @_;
 	if (!$teamid) {
 		return "Team ID \"$teamid\" is invalid";
@@ -835,8 +848,7 @@ sub main_format {
 		CLANVCLANTABLE => sub { &period_gametable($_[0], $c->param("clans"), $_[2], $_[3]) },
 		TOPPLAYERS => sub { &period_topplayers(@_) },
 		CLANGRID => sub { &period_clangrid(@_) },
-		BRAWL => sub { &clan_brawllist(@_) },
-		BRAWLADMIN => sub { &clan_brawladmin(@_) },
+		TEAMS => sub { &clan_teamlist(@_) },
 		LOCALPAGE => sub {
 			my ($c, $name, $text) = @_;
 			my $url = $c->baseurl('page','alter')."page=$name";

@@ -18,8 +18,11 @@ use Clans::Form::Types;
 use Clans::Form::Forms;
 use strict;
 use warnings;
-our (%forms, %input_tests);
+our (%forms, %categories, %input_tests);
 
+our $access_cache;
+our $infer_cache;
+our $check_cache;
 sub process_input {
 	my ($c) = @_;
 	my @formnames = $c->param('process');
@@ -108,70 +111,108 @@ sub process_form {
 sub no_access {
 	my ($c, $name, $params, $params_info) = @_;
 	my @checks = split /\|/, $forms{$name}{checks};
-	for my $level (@checks) {
+	for my $level_orig (@checks) {
+		if ($access_cache && exists $access_cache->{$level_orig}) {
+			return $access_cache->{$level_orig} if $access_cache->{$level_orig};
+			next;
+		}
+		my $level = $level_orig;
 		$level =~ s/\$(\w+)/my $val = $params_info->{$1}{value}; defined $val ? $val : ""/eg;
+		my $message;
 		if ($level eq 'admin' || $level =~ /clan_(leader|moderator)\(\)/) {
 			if (!$c->is_admin()) {
-				return "You are not an admin";
+				$message = "You are not an admin";
 			}
 		} elsif ($level =~ /clan_leader\((\d+)\)/) {
 			if (!$c->is_clan_leader($1)) {
-				return "You are not a clan leader";
+				$message = "You are not a clan leader";
 			}
 		} elsif ($level =~ /clan_moderator\((\d+)\)/) {
 			if (!$c->is_clan_moderator($1)) {
-				return "You are not a clan moderator";
+				$message = "You are not a clan moderator";
 			}
 		} elsif ($level =~ /period_active\((\d+)\)/) {
 			my $current_period = $c->db_selectone("SELECT id FROM clanperiods ORDER BY id DESC LIMIT 1");
 			if ($current_period != $1 && !$c->is_admin()) {
-				return "This period is no longer active";
+				$message = "This period is no longer active";
 			}
 		} elsif ($level =~ /period_predraw\((\d+)\)/) {
 			my $draw_made = $c->db_selectone("SELECT COUNT(*) FROM brawl WHERE period_id = ?", {}, $1);
 			if ($draw_made) {
-				return "Operation unavailable after draw has been made";
+				$message = "Operation unavailable after draw has been made";
 			}
 		} elsif ($level =~ /period_prebrawl\((\d+)\)/) {
 			my $brawl_begun = $c->db_selectone("SELECT COUNT(*) FROM brawl NATURAL JOIN team_match_players WHERE brawl.period_id = ?", {}, $1);
 			if ($brawl_begun) {
-				return "Operation unavailable after brawl has begun";
+				$message = "Operation unavailable after brawl has begun";
 			}
 		} else {
-			return "This action required an unknown permission";
+			$message = "This action required an unknown permission";
 		}
+		if ($message) {
+			$access_cache->{$level_orig} = $message;
+			return $message;
+		}
+		$access_cache->{$level_orig} = undef;
 	}
 }
 
 sub gen_form {
 	my ($c, $name, $category) = @_;
 	return unless $forms{$name};
-	$category ||= $forms{$name}{category}[0];
+	$category ||= $forms{$name}{categories}[0];
 	my ($output_params, $output_params_info) = &parse_form_def($c, $name);
 	return $output_params unless $output_params_info;
-	my $ret = &fill_values($c, $name, $output_params, $output_params_info);
+	my %reasons;
+	my $ret = &fill_values($c, $name, $output_params, $output_params_info, \%reasons);
 	return $ret if $ret;
 	if (my $reason = &no_access($c, $name, $output_params, $output_params_info)) {
 		return "Sorry, you do not have permission to access the $forms{$name}{brief} form ($reason)";
 	}
-	return &output_form($c, $name, $category, $output_params, $output_params_info);
+	return &output_form($c, $name, $category, $output_params, $output_params_info); #, \%reasons);
 }
 
 sub form_list {
 	my ($c, $category) = @_;
-	my @form_names = grep { grep { $_ eq $category } @{$forms{$_}{category}} } keys %forms;
+	my @form_names = grep { grep { $_ eq $category } @{$forms{$_}{categories}} } keys %forms;
 	my %param_cache;
-	my %access_cache;
+	$access_cache = {};
+	$infer_cache = {};
+	$check_cache = {};
 	my %category_forms;
+	my %sort;
 	for my $form_name (@form_names) {
-		$category_forms{$forms{$form_name}{category}[0]} ||= [];
-		push @{$category_forms{$forms{$form_name}{category}[0]}}, $form_name;
+		if ($forms{$form_name}{extra_category}) {
+			$category_forms{$forms{$form_name}{extra_category}} ||= [];
+			push @{$category_forms{$forms{$form_name}{extra_category}}}, $form_name;
+			$sort{$form_name} = 0;
+		}
+		if ($forms{$form_name}{override_category}) {
+			$category_forms{$forms{$form_name}{override_category}} ||= [];
+			push @{$category_forms{$forms{$form_name}{override_category}}}, $form_name;
+			$sort{$form_name} = 0;
+		} elsif ($forms{$form_name}{acts_on}) {
+			my @cats = split /,/, $forms{$form_name}{acts_on};
+			for (@cats) {
+				s/([+-]).*//;
+				if ($1) {
+					if ($1 eq '+') {
+						$sort{$form_name} = -1;
+					} else {
+						$sort{$form_name} = 1;
+					}
+				} else {
+					$sort{$form_name} = 0;
+				}
+				$category_forms{$_} ||= [];
+				push @{$category_forms{$_}}, $form_name;
+			}
+		}
 	}
 	my $output = '';
-	for my $category_name (keys %category_forms) {
-		$output .= "<h3>Category: $category_name</h3>";
-		$output .= "<ul>";
-		for my $form_name (sort { $forms{$a}{brief} cmp $forms{$b}{brief} } @{$category_forms{$category_name}}) {
+	my $last_cat = '';
+	for my $category_name (sort { $categories{$a}{sort} <=> $categories{$b}{sort} } keys %category_forms) {
+		for my $form_name (sort { $sort{$a} <=> $sort{$b} || $forms{$a}{brief} cmp $forms{$b}{brief} } @{$category_forms{$category_name}}) {
 			my @param_names = @{$forms{$form_name}{params}};
 			my %param_hash;
 			for my $param_name (@param_names) {
@@ -180,16 +221,101 @@ sub form_list {
 				}
 				$param_hash{$param_name} = $param_cache{$param_name} if defined $param_cache{$param_name};
 			}
-			# TODO check access
+			my ($output_params, $output_params_info) = &parse_form_def($c, $form_name);
+			next unless $output_params_info;
+			if (&fill_values_mini($c, $form_name, $output_params, $output_params_info)) {
+				#$output .= "<li>bad params for $form_name</li>";
+				next;
+			}
+			if (&no_access($c, $form_name, $output_params, $output_params_info)) {
+				#$output .= "<li>no access to $form_name</li>";
+				next;
+			}
+			if ($last_cat ne $category_name) {
+				if ($last_cat) {
+					$output .= "</ul>";
+				}
+				$output .= "<h3>$categories{$category_name}{name}</h3>";
+				$output .= "<ul>";
+			}
+			$last_cat = $category_name;
 			my $params = "";
 			if (keys %param_hash) {
 				$params = "&amp;".join("&amp;", map { "$form_name\_$_=$param_hash{$_}" } keys %param_hash);
 			}
 			$output .= qq|<li><a href="?form=$form_name&amp;$form_name\_category=$category$params">$forms{$form_name}{brief}</a></li>|;
 		}
-		$output .= "</ul>";
+		if ($last_cat) {
+			$output .= "</ul>";
+		}
 	}
 	return $output;
+}
+
+# Used only on the form list page. Ignores multi params, and can only take
+# parameters which are directly input or inferred from directly input
+# parameters. Accepts only use parameters.
+sub fill_values_mini {
+	my ($c, $name, $output_params, $output_params_info) = @_;
+	my %reasons; # Track badness of parameters.
+
+	# Investigate the parameter list we're meant to have, and include any
+	# supplied values.
+	my @given_params; # Things that passed checks.
+	foreach my $param_name (@$output_params) {
+		# We'll be filling this out
+		my $info = $output_params_info->{$param_name};
+
+		if (is('informational', $info, 'admin') || is('override', $info, 'admin')) {
+			# We don't care. They don't affect form-wide permissions.
+			next;
+		}
+		
+		# Do we have a value for this param supplied by the form?
+		my $value;
+		if (defined($value = $c->param($param_name))) {
+			$info->{value} = $value;
+		}
+
+		if (!&bad_value($c, $info, \$info->{value}, $output_params_info) && $info->{value}) {
+			push @given_params, $param_name;
+		}
+	}
+
+	# That's all of the user-visible form input parsed. Now, if the user
+	# happened to select an item in a dropdown which implies changes to other
+	# items, we must ensure this has happened.
+	# These choices will change any user_value as well as set auto_value.
+	for my $user_updated (@given_params) {
+		my $info = $output_params_info->{$user_updated};
+
+		# There may be several inferences, so we must parse the type string
+		$infer_cache->{$user_updated} ||= {};
+		foreach my $type_info (@{$info->{types}}) {
+			# At this point, we got a positive inference on our parameter list.
+			if ($type_info->{definition}{infer} && @{$type_info->{params}}) {
+				my $inferred;
+				if (exists $infer_cache->{$user_updated}{$info->{value}}) {
+					$inferred = $infer_cache->{$user_updated}{$info->{value}};
+				} else {
+					local $_ = $info->{value};
+					$inferred = $type_info->{definition}{infer}->($c);
+					$infer_cache->{$user_updated}{$_} = $inferred;
+				}
+				next unless $inferred;
+				$inferred = $inferred->[0] if (ref $inferred->[0]);
+				foreach my $idx (0..$#{$type_info->{params}}) {
+					next unless defined $inferred->[$idx];
+					if ($type_info->{params}[$idx] =~ /^\$(\w+)$/) {
+						$output_params_info->{$1}{value} = $inferred->[$idx];
+					} elsif ($type_info->{params}[$idx] ne $inferred->[$idx]) {
+						# Undefined behaviour; error for now
+						next;
+					}
+				}
+			}
+		}
+	}
 }
 
 sub fill_values {
@@ -374,6 +500,13 @@ sub fill_values {
 				}
 			}
 
+			# Finally, if there's no value and we can find a default, use it.
+			if (!$info->{value}) {
+				if (my $def_fn = $type_info->{definition}{default}) {
+					$info->{auto_value} = $multi ? [ $def_fn->($c, @params) ] : $def_fn->($c, @params);
+					$info->{value} = $info->{auto_value};
+				}
+			}
 		}
 
 		# If this has a list and the current value isn't in it, remove it now.
@@ -451,13 +584,13 @@ sub output_form {
 			# Overrides are only visible once they are enabled.
 			next;
 		}
-		if (!$informational) {
+		if (!$informational && defined $info->{auto_value}) {
 			if ($multi) {
-				for my $value (@{$value||[]}) {
+				for my $value (@{$info->{auto_value}}) {
 					$hidden_output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
 				}
 			} else {
-				$hidden_output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($value).qq|"/>|;
+				$hidden_output .= qq|<input type="hidden" name="$qname\_auto_$qparam_name" value="|.$c->escapeHTML($info->{auto_value}).qq|"/>|;
 			}
 		}
 		my $html = is('html', $info, $category);
@@ -613,6 +746,7 @@ sub parse_form_def {
 			# Before we treat them destructively, copy the parameters.
 			$type_info->{params} = [@params];
 			$type_info->{type} = $type;
+			$type_info->{type_str} = $type_str;
 			$type_info->{definition} = $input_tests{$type};
 
 
@@ -664,7 +798,14 @@ sub bad_value {
 
 		my @params = @{$type->{params}};
 		s/\$(\w+)/my $val = $params_info->{$1}{value}; defined $val ? $val : ""/eg foreach(@params);
+		if ($check_cache) {
+			if (exists $check_cache->{$type->{type_str}}) {
+				return $check_cache->{$type->{type_str}} if $check_cache->{$type->{type_str}};
+				next;
+			}
+		}
 
+		my ($no_cache, $message);
 		for my $value (ref $$value ? map { \$_ } @$$value : $value) {
 			if ($type->{list_default}) {
 				# This type is used only to default lists, so skip it.
@@ -675,6 +816,7 @@ sub bad_value {
 				local $_ = $$value;
 				$modify->($c, @params);
 				$$value = $_;
+				$no_cache = 1;
 			}
 
 			# Null values are trivial to deal with. However, must check after above
@@ -683,12 +825,16 @@ sub bad_value {
 				if (!$$value) {
 					if (my $default = $type->{definition}{default}) {
 						$$value = $default->($c, @params);
-						return "no value specified; default picked";
+						# Special case; ignore cache.
+						$no_cache = 1;
+						$message = "no value specified; default picked";
+						next;
 					}
 				}
 
 				if (!$$value) {
-					return "must not be empty";
+					$message = "must not be empty";
+					next;
 				}
 			} elsif (!$$value) {
 				next;
@@ -698,7 +844,8 @@ sub bad_value {
 				local $_ = $$value;
 				my $ret = $check->($c, @params);
 				if (!$ret) {
-					return "invalid value";
+					$message = "invalid value";
+					next;
 				}
 			}
 
@@ -707,14 +854,25 @@ sub bad_value {
 					local $_ = $$value;
 					my $ret = $exists->($c, @params);
 					if ($ret && $must_not_exist) {
-						return "cannot use an existing value";
+						$message = "cannot use an existing value";
+						next;
 					} elsif (!$ret && $must_exist) {
-						return "must use an existing value ($_)";
+						$message = "must use an existing value ($_)";
+						next;
 					}
 				} elsif (!exists $type->{definition}{exists}) {
-					return "existence check requested but none available";
+					$message = "existence check requested but none available";
+					next;
 				}
 			}
+		} continue {
+			if ($check_cache && !$no_cache) {
+				$check_cache->{$type->{type_str}} = $message;
+			}
+			if ($message) {
+				return $message;
+			}
+			undef $no_cache;
 		}
 	}
 
@@ -730,3 +888,5 @@ sub is {
 		return $value;
 	}
 }
+
+1;

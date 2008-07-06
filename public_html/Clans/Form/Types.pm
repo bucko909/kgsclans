@@ -82,7 +82,11 @@ id_clan => {
 	},
 	default => sub {
 		my ($c, $period) = @_;
-		return $c->db_selectone("SELECT id FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE forumuser_clans.user_id = ?", {}, $c->{userid});
+		if ($period) {
+			return $c->db_selectone("SELECT id FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE forumuser_clans.user_id = ? AND clans.period_id = ?", {}, $c->{userid}, $period);
+		} else {
+			return $c->db_selectone("SELECT id FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE forumuser_clans.user_id = ?", {}, $c->{userid});
+		}
 	},
 	exists => sub {
 		my ($c, $period) = @_;

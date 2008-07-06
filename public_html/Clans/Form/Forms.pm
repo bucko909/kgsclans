@@ -2,11 +2,47 @@ package Clans::Form;
 use strict;
 use warnings;
 
+our %categories = (
+	period => {
+		name => 'Global Admin',
+		sort => -1,
+	},
+	clan => {
+		name => 'General Clan',
+		sort => 5,
+	},
+	page => {
+		name => 'Page Editing',
+		sort => -0.7,
+	},
+	team => {
+		name => 'Teams',
+		sort => 1,
+	},
+	challenge => {
+		name => 'Team Matches',
+		sort => 2,
+	},
+	member => {
+		name => 'Members',
+		sort => 1,
+	},
+	alias => {
+		name => 'KGS Usernames',
+		sort => 4,
+	},
+	common => {
+		name => 'Common Tasks',
+		sort => -0.5,
+	},
+);
+
 our %forms = (
 add_period => {
 	brief => 'Add a new period',
 	checks => 'admin',
-	category => [ qw/admin/ ],
+	categories => [ qw/admin/ ],
+	acts_on => 'period+',
 	description => 'Produces a new clan period based on another.',
 	params => [
 		old_period_id => {
@@ -44,7 +80,8 @@ add_period => {
 remove_clan => {
 	brief => 'Remove an entire clan',
 	checks => 'admin',
-	category => [ qw/admin/ ],
+	categories => [ qw/admin/ ],
+	acts_on => 'clan-',
 	description => 'Remove a clan as best as can be afforded by the system.',
 	params => [
 		period_id => {
@@ -115,7 +152,8 @@ remove_clan => {
 brawl_draw => {
 	brief => 'Produce draw for next round of the brawl',
 	checks => 'admin',
-	category => [ qw/admin/ ],
+	categories => [ qw/admin/ ],
+	acts_on => 'period',
 	description => 'Produces the draw for the next round of the brawl.',
 	params => [
 		period_id => {
@@ -427,7 +465,8 @@ add_clan => {
 	# Add clan. Autogen form on admin page.
 	brief => 'Add clan',
 	checks => 'admin',
-	category => [ qw/admin/ ],
+	categories => [ qw/admin/ ],
+	acts_on => 'clan+',
 	description => 'Allows you to add a clan to the system. After adding, please ensure the new leader adds 4 further members before a week is up.',
 	params => [
 		period_id => {
@@ -558,12 +597,13 @@ add_page => {
 	# Edit page. Invoked only from custom forms.
 	brief => 'Add page',
 	checks => 'admin',
-	category => [ qw/page admin/ ],
+	categories => [ qw/page admin/ ],
+	acts_on => 'page+',
 	params => [
 		period_id => {
 			type => 'id_period',
 		},
-		name => {
+		page_name => {
 			type => 'valid_new|name_page($period_id)',
 		},
 		based_on => {
@@ -581,7 +621,7 @@ add_page => {
 		# Is it new? What revision?
 		$p->{time} = time();
 		$p->{forum_user_id} = $c->{phpbbsess}{userid};
-		if (!$c->db_do("INSERT INTO content SET name=?, content=?, revision=?, period_id=?, created=?, creator=?, current=?", {}, $p->{name}, $p->{content}, 1, $p->{period_id}, $p->{time}, $p->{forum_user_id}, 1)) {
+		if (!$c->db_do("INSERT INTO content SET name=?, content=?, revision=?, period_id=?, created=?, creator=?, current=?", {}, $p->{page_name}, $p->{content}, 1, $p->{period_id}, $p->{time}, $p->{forum_user_id}, 1)) {
 		my $name = $c->param('page');
 			return (0, "Database error.");
 		}
@@ -592,12 +632,13 @@ change_page => {
 	# Edit page. Invoked only from custom forms.
 	brief => 'Change page',
 	checks => 'admin',
-	category => [ qw/page admin/ ],
+	categories => [ qw/page admin/ ],
+	acts_on => 'page',
 	params => [
 		period_id => {
 			type => 'id_period',
 		},
-		name => {
+		page_name => {
 			type => 'name_page($period_id)',
 		},
 		revision => {
@@ -611,7 +652,7 @@ change_page => {
 		my ($c, $p) = @_;
 
 		# Is it new? What revision?
-		$p->{lastrevision} = $c->db_selectone("SELECT MAX(revision) FROM content WHERE name = ? AND period_id = ?", {}, $p->{name}, $p->{period_id});
+		$p->{lastrevision} = $c->db_selectone("SELECT MAX(revision) FROM content WHERE name = ? AND period_id = ?", {}, $p->{page_name}, $p->{period_id});
 		if ($p->{lastrevision}) {
 			$p->{newrevision} = $p->{lastrevision} + 1;
 		} else {
@@ -619,11 +660,11 @@ change_page => {
 		}
 		$p->{time} = time();
 		$p->{forum_user_id} = $c->{phpbbsess}{userid};
-		if (!$c->db_do("INSERT INTO content SET name=?, content=?, revision=?, period_id=?, created=?, creator=?, current=?", {}, $p->{name}, $p->{content}, $p->{newrevision}, $p->{period_id}, $p->{time}, $p->{forum_user_id}, 1)) {
+		if (!$c->db_do("INSERT INTO content SET name=?, content=?, revision=?, period_id=?, created=?, creator=?, current=?", {}, $p->{page_name}, $p->{content}, $p->{newrevision}, $p->{period_id}, $p->{time}, $p->{forum_user_id}, 1)) {
 		my $name = $c->param('page');
 			return (0, "Database error.");
 		}
-		$c->db_do("UPDATE content SET current=0 WHERE name=? AND period_id=? AND revision!=?", {}, $p->{name}, $p->{period_id}, $p->{newrevision});
+		$c->db_do("UPDATE content SET current=0 WHERE name=? AND period_id=? AND revision!=?", {}, $p->{page_name}, $p->{period_id}, $p->{newrevision});
 		return (1, "Text updated.");
 	}
 },
@@ -631,7 +672,8 @@ change_clan_name => {
 	# Alter clan's name.
 	brief => 'Change clan name',
 	checks => 'clan_leader($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	acts_on => 'clan',
 	description => 'Alter the clan\'s name. Please keep the name sensible, with no profanity etc.',
 	params => [
 		period_id => {
@@ -665,7 +707,8 @@ change_clan_tag => {
 	# Set clan's tag.
 	brief => 'Change clan tag',
 	checks => 'clan_leader($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	acts_on => 'clan',
 	description => 'Alter the clan\'s tag. Please keep the tag free of profanity etc.',
 	params => [
 		period_id => {
@@ -703,7 +746,8 @@ change_clan_url => {
 	# Set clan's URL
 	brief => 'Change clan website address',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	acts_on => 'clan',
 	description => 'With this form you may give a website address people can visit for more information on your clan.',
 	params => [
 		period_id => {
@@ -741,7 +785,8 @@ change_clan_info => {
 	# Set info field
 	brief => 'Change clan description',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	acts_on => 'clan',
 	description => 'Here you may set a description for your clan. Some of this will be shown on the summary page, and all of it will be shown on your clan\'s info page.',
 	params => [
 		period_id => {
@@ -778,7 +823,8 @@ change_clan_info => {
 change_clan_leader => {
 	brief => 'Change displayed clan leader',
 	checks => 'clan_leader($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	acts_on => 'clan',
 	description => 'This changes the member who will be listed as the leader when people look at the summary page etc. It does not grant the member any permissions (you should do this by fiddling with forum groups).',
 	params => [
 		period_id => {
@@ -815,7 +861,9 @@ change_clan_leader => {
 add_team_game => {
 	brief => 'Add team game',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/team clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	override_category => 'challenge',
+	extra_category => 'common',
 	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
 	params => [
 		period_id => {
@@ -978,10 +1026,12 @@ add_team_game => {
 		return (1, "Added game");
 	},
 },
-add_clan_member => {
+add_member => {
 	brief => 'Add member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/member clan admin/ ],
+	categories => [ qw/member clan admin/ ],
+	acts_on => 'member+',
+	extra_category => 'common',
 	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
 	params => [
 		period_id => {
@@ -1031,7 +1081,8 @@ add_clan_member => {
 add_private_clan_forum => {
 	brief => 'Add private clan forum',
 	checks => 'clan_leader($clan_id)|period_active($period_id)',
-	category => [ qw/clan admin/ ],
+	categories => [ qw/clan admin/ ],
+	acts_on => 'clan',
 	description => 'With this form, you can add a private forum for your clan\'s members. Only people in your clan\'s members group on the forum (and of course admins) will be able to see it.',
 	params => [
 		period_id => {
@@ -1093,10 +1144,11 @@ add_private_clan_forum => {
 		return (1, "Added private forum.");
 	}
 },
-remove_clan_member => {
+remove_member => {
 	brief => 'Remove clan member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/member clan admin/ ],
+	categories => [ qw/member clan admin/ ],
+	acts_on => 'member-',
 	description => 'You can use this to remove a member from your clan. If they have any clan games, they will have all of their KGS names removed, so that they are marked inactive and won\'t count towards your total when adding new members. This means any games they played still count for your clan, and they will still be pure games for both players if played against another clan.',
 	params => [
 		period_id => {
@@ -1140,7 +1192,8 @@ remove_clan_member => {
 add_challenge => {
 	brief => 'Challenge a clan',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/challenge clan admin/ ],
+	categories => [ qw/challenge clan admin/ ],
+	acts_on => 'challenge+',
 	description => 'This form allows you to challenge another clan. The other clan can pick which team they respond to (you may want to agree this with them beforehand). They must respond within 2 weekly updates.',
 	params => [
 		period_id => {
@@ -1167,8 +1220,8 @@ add_challenge => {
 			brief => 'Clan to challenge',
 			readonly => [],
 		},
-		ccclan_name => {
-			type => 'name_clan($period_id,$chal_id)',
+		cclan_name => {
+			type => 'name_clan($period_id,$cclan_id)',
 			hidden => 1,
 			informational => 1,
 		},
@@ -1185,10 +1238,11 @@ add_challenge => {
 		}
 
 		# Check the challenge makes sense...
-		$p->{chal_seats} = $c->db_selectone("SELECT COUNT(*) AS count FROM team_seats INNER JOIN teams ON team_seats.team_id = teams.id WHERE team_seats.clan_id = ? GROUP BY team_seats.team_id ORDER BY count LIMIT 1", {}, $p->{cclan_id});
+		$p->{req_points} = $c->get_option('BRAWLMEMBERPOINTS', $p->{period_id});
+		$p->{chal_qual_players} = $c->db_selectone("SELECT COUNT(*) FROM members WHERE members.clan_id = ? AND members.played + members.played_pure >= ?", {}, $p->{cclan_id}, $p->{req_points});
 		$p->{our_seats} = $c->db_selectone("SELECT COUNT(*) FROM team_seats WHERE team_seats.team_id = ?", {}, $p->{team_id});
-		if ($p->{chal_seats} != 5) {
-			return (0, "The opposing clan does not have a team with a full roster. Please ensure the opposing clan is ready to meet your challenge.");
+		if ($p->{chal_qual_players} < 5) {
+			return (0, "The opposing clan does not have enough qualified members to make a team. Please ensure the opposing clan is ready to meet your challenge.");
 		} elsif ($p->{our_seats} != 5) {
 			return (0, "Your team does not have a full roster. Please ensure your team has a full roster before sending challenges.");
 		}
@@ -1198,7 +1252,7 @@ add_challenge => {
 		if ($c->db_do("INSERT INTO challenges SET challenger_team_id = ?, challenged_clan_id = ?, challenge_date = ?", {}, $p->{team_id}, $p->{cclan_id}, $p->{time})) {
 			$p->{challenge_id} = $c->lastid;
 			$p->{forum_id} = $c->db_selectone("SELECT forum_id FROM clans WHERE id=?", {}, $p->{cclan_id});
-			($p->{post_id}, $p->{topic_id}) = $c->forum_post_or_reply($p->{forum_id}, "Clan Challenges", "Challenge from $p->{clan_name}", $c->render_clan($p->{clan_id}, $p->{clan_name}).qq|'s $p->{team_name} team has challenged your clan to a battle. You must <a href="/admin.pl?form=accept_challenge&accept_challenge_challenge_id=$p->{challenge_id}&accept_challenge_changed=challenge_id">accept</a> or <a href="/admin.pl?form=decline_challenge&decline_challenge_challenge_id=$p->{challenge_id}&decline_challenge_changed=challenge_id">decline</a> within a week or get a penalty of 5 points.|, "00000000");
+			($p->{post_id}, $p->{topic_id}) = $c->forum_post_or_reply($p->{forum_id}, "Team Challenges", "Challenge from $p->{clan_name}", $c->render_clan($p->{clan_id}, $p->{clan_name}).qq|'s $p->{team_name} team has challenged your clan to a battle. You must <a href="/admin.pl?form=accept_challenge&accept_challenge_challenge_id=$p->{challenge_id}&accept_challenge_changed=challenge_id">accept</a> or <a href="/admin.pl?form=decline_challenge&decline_challenge_challenge_id=$p->{challenge_id}&decline_challenge_changed=challenge_id">decline</a> within a week or get a penalty of 5 points.|, "00000000");
 			$c->db_do("UPDATE challenges SET forum_post_id = ? WHERE id = ?", {}, $p->{post_id}, $p->{challenge_id});
 			return (1, "OK; sent challenge.");
 		} else {
@@ -1209,7 +1263,9 @@ add_challenge => {
 accept_challenge => {
 	brief => 'Accept a challenge',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/challenge team clan admin/ ],
+	categories => [ qw/challenge team clan admin/ ],
+	acts_on => 'challenge-,team_match+',
+	override_category => 'challenge',
 	description => 'This form allows you to accept a challenge sent to your clan.',
 	params => [
 		period_id => {
@@ -1282,7 +1338,8 @@ accept_challenge => {
 decline_challenge => {
 	brief => 'Decline a challenge',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/challenge clan admin/ ],
+	categories => [ qw/challenge clan admin/ ],
+	acts_on => 'challenge-',
 	description => 'This form allows you to accept a challenge sent to your clan.',
 	params => [
 		period_id => {
@@ -1321,7 +1378,8 @@ decline_challenge => {
 add_team => {
 	brief => 'Add team',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
-	category => [ qw/team clan admin/ ],
+	categories => [ qw/team clan admin/ ],
+	acts_on => 'team+',
 	description => 'This form allows you to add a new team for your clan. Note that it currently does not check you have met the requirements for entering teams into the brawl, so even if you can add a team it doesn\'t mean it will be entered into the brawl.',
 	params => [
 		period_id => {
@@ -1354,7 +1412,8 @@ add_team => {
 change_team_order => {
 	brief => 'Change order of teams',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
-	category => [ qw/team clan admin/ ],
+	categories => [ qw/team clan admin/ ],
+	acts_on => 'team',
 	description => 'You can use this form to reorder your teams (for example, to change which gets automatically entered into the brawl). Moving a team up gives it higher priority.',
 	params => [
 		period_id => {
@@ -1401,7 +1460,8 @@ change_team_order => {
 change_team_name => {
 	brief => 'Change team name',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
-	category => [ qw/team clan admin/ ],
+	categories => [ qw/team clan admin/ ],
+	acts_on => 'team',
 	description => 'You can use this form to rename your team.',
 	params => [
 		period_id => {
@@ -1441,7 +1501,8 @@ change_team_name => {
 remove_team => {
 	brief => 'Remove team',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
-	category => [ qw/team clan admin/ ], 
+	categories => [ qw/team clan admin/ ],
+	acts_on => 'team-',
 	description => 'If you find you no longer want some team in the brawl, you can remove it here.',
 	params => [
 		period_id => {
@@ -1479,7 +1540,8 @@ remove_team => {
 remove_member_from_team => {
 	brief => 'Remove member from team',
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
-	category => [ qw/team member clan admin/ ],
+	categories => [ qw/team member clan admin/ ],
+	acts_on => 'team',
 	description => 'Here you can remove members from teams. If you select "None", all members will be removed.',
 	params => [
 		period_id => {
@@ -1538,7 +1600,8 @@ remove_member_from_team => {
 change_team_members => {
 	brief => 'Select team members',
 	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
-	category => [ qw/team clan admin/ ],
+	categories => [ qw/team clan admin/ ],
+	acts_on => 'team',
 	description => 'Here you can add members to a team.',
 	params => [
 		period_id => {
@@ -1598,7 +1661,8 @@ change_team_members => {
 add_member_to_team => {
 	brief => 'Add member to team',
 	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
-	category => [ qw/team member clan admin/ ],
+	categories => [ qw/team member clan admin/ ],
+	acts_on => 'team',
 	description => 'Here you can add members to a team.',
 	params => [
 		period_id => {
@@ -1652,7 +1716,8 @@ add_member_to_team => {
 change_team_seat => {
 	brief => 'Change seat of team member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/team member clan admin/ ],
+	categories => [ qw/team member clan admin/ ],
+	acts_on => 'team',
 	description => 'Choose the lineup for your teams here.',
 	params => [
 		period_id => {
@@ -1710,7 +1775,8 @@ change_team_seat => {
 change_member_name => {
 	brief => 'Change member name',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/member clan admin/ ],
+	categories => [ qw/member clan admin/ ],
+	acts_on => 'member',
 	description => 'You can change the displayed name of a member here.',
 	params => [
 		period_id => {
@@ -1750,7 +1816,8 @@ change_member_name => {
 change_member_rank => {
 	brief => 'Change member rank',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/member clan admin/ ],
+	categories => [ qw/member clan admin/ ],
+	acts_on => 'member',
 	description => 'This is not the player\'s playing strength, but a string that will be placed next to their name. You may for instace set a Captain rank on one member. If you put a % sign in the rank, for instance "%, Fishmonger", the % will be changed to the member name, resulting in "Fred, Fishmonger" or something in this case. Otherwise the rank will be placed before the member\'s name.',
 	params => [
 		period_id => {
@@ -1795,7 +1862,9 @@ change_member_rank => {
 add_kgs_username => {
 	brief => 'Add KGS username to member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/alias member clan admin/ ], 
+	categories => [ qw/alias member clan admin/ ], 
+	acts_on => 'alias+',
+	override_category => 'member',
 	description => 'If a member has several names on KGS, you can add them all here. Please keep this below 3 names per member, as each name adds time to the nightly update and places load on KGS\'s servers.',
 	params => [
 		period_id => {
@@ -1849,7 +1918,9 @@ add_kgs_username => {
 remove_kgs_username => {
 	brief => 'Remove KGS username from member',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
-	category => [ qw/alias member clan admin/ ],
+	categories => [ qw/alias member clan admin/ ],
+	acts_on => 'alias-',
+	override_category => 'member',
 	description => 'If a member no longer uses a username to play clan games, remove it here. If you remove all usernames, a member becomes inactive and no longer counts towards total membership when adding new members.',
 	params => [
 		period_id => {

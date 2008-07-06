@@ -103,14 +103,14 @@ sub render_team {
 		if (!$clan_id) {
 			return "$_[1] (????)";
 		} else {
-			return "$_[1] (".$this->renderclan($clan_id).")";
+			return "$_[1] (".$this->render_clan($clan_id).")";
 		}
 	} elsif (!$_[1]) {
-		my $info = $this->db_selectrow("SELECT clan_id, nane FROM teams WHERE id = ?", {}, $_[0]);
+		my $info = $this->db_selectrow("SELECT clan_id, name FROM teams WHERE id = ?", {}, $_[0]);
 		if (!$info) {
 			return "????";
 		} else {
-			return "$info->[1] (".$this->renderclan($info->[0]).")";
+			return "$info->[1] (".$this->render_clan($info->[0]).")";
 		}
 	}
 }
@@ -345,15 +345,19 @@ sub is_admin {
 	}
 	return $isadmin;
 }
+
 sub is_clan_leader {
 	my ($c, $clan_id) = @_;
-	my $isadmin;
+	return 1 if $c->is_admin;
+	$c->{is} ||= {};
+	my $is_leader;
 	if ($c->{phpbbsess}{groupids}) {
 		foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
-			$isadmin = 1 if $groupid == 4 || $groupid == 287;
+			$is_leader = 1 if $groupid == 4 || $groupid == 287;
 		}
 	}
-	return unless $isadmin;
+	$c->{is}{leader} = $is_leader;
+	return unless $is_leader;
 	if ($clan_id) {
 		return is_clan_moderator($c, $clan_id);
 	} else {
@@ -363,14 +367,25 @@ sub is_clan_leader {
 
 sub is_clan_moderator {
 	my ($c, $clan_id) = @_;
-	my $clan_info = $c->clan_info($clan_id);
-	my $isadmin;
+	return 1 if $c->is_admin;
+	my $clan_check = $clan_id ? $clan_id : 'any';
+	$c->{is} ||= {};
+	$c->{is}{moderator} ||= {};
+	if (exists $c->{is}{moderator}{$clan_check}) {
+		return $c->{is}{moderator}{$clan_check};
+	}
+	my $is_moderator;
 	if ($c->{phpbbsess}{groupids}) {
-		foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
-			$isadmin = 1 if $groupid == $clan_info->{forum_leader_group_id} || $groupid == 287;
+		my $groups = join(',', @{$c->{phpbbsess}{groupids}});
+		# XXX not using proper prepared statement
+		if ($clan_id) {
+			$is_moderator = $c->db_selectone("SELECT id FROM clans WHERE forum_leader_group_id IN($groups) AND id = ?", {}, $clan_id);
+		} else {
+			$is_moderator = $c->db_selectone("SELECT id FROM clans WHERE forum_leader_group_id IN($groups)");
 		}
 	}
-	return $isadmin;
+	$c->{is}{moderator}{$clan_check} = $is_moderator;
+	return $is_moderator;
 }
 
 sub is_clan_member {
