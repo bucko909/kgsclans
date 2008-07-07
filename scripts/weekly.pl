@@ -251,7 +251,7 @@ for(@$clanresults) {
 		if ($ispositive) {
 			$clansummary .= "[/list:u:$u]\n\n";
 		}
-		if (!defined $ispositive) {
+		if (!defined $ispositive || $ispositive != 0) {
 			$clansummary .= "The following clans played no games: ";
 		}
 		$ispositive = 0;
