@@ -26,7 +26,7 @@ our $start_time = $end_time - 60*60*24*7;
 our $match_too_old_time = $start_time - 60*60*24*7;
 
 # Get forum activity. This needs to be done bang on midnight.
-our $period_info = $c->period_info(6);
+our $period_info = $c->period_info();
 
 my $lastvisit_results = $c->db_select("SELECT MAX(phpbb3_users.user_last_pageview), clans.id FROM phpbb3_users INNER JOIN phpbb3_user_group USING(user_id) INNER JOIN phpbb3_groups ON phpbb3_groups.group_id = phpbb3_user_group.group_id RIGHT OUTER JOIN clans ON clans.forum_leader_group_id = phpbb3_groups.group_id WHERE period_id = ? GROUP BY clans.id;", {}, $period_info->{id});
 # Includes ban on Wu Tang's forum
@@ -168,9 +168,7 @@ sub match_summary {
 	# Gets all unannounced matches. Calculates the winner in the SQL...
 	my $match_results = $c->db_select("SELECT m.id, t1.name, t2.name, c2.id, c2.name, mt1.team_no, IF(SUM(s.winner=1)>SUM(s.winner=2),1,IF(SUM(s.winner=1)<SUM(s.winner=2),2,IF(MIN(s.seat_no+s.winner*0.5)%1=0.5,1,2))), m.winner, SUM(IF(s.winner IS NOT NULL,1,0)), start_date FROM team_matches m INNER JOIN team_match_seats s ON m.id = s.team_match_id LEFT OUTER JOIN brawl_prelim bp ON bp.team_match_id = m.id LEFT OUTER JOIN brawl b ON b.team_match_id = m.id INNER JOIN team_match_teams mt1 ON mt1.team_match_id = m.id INNER JOIN team_match_teams mt2 ON mt2.team_match_id = m.id AND mt2.team_id != mt1.team_id INNER JOIN teams t1 ON t1.id = mt1.team_id INNER JOIN teams t2 ON t2.id = mt2.team_id INNER JOIN clans c2 ON c2.id = t2.clan_id WHERE b.round IS NULL AND bp.for_position IS NULL AND t1.clan_id = ? GROUP BY m.id", {}, $clan_id);
 	# Saves using a HAVING. Pull out only expired or otherwise finished matches.
-	print "Matches: $clan_id".join(",", map { $_->[0] } @$match_results)."\n";
 	@$match_results = grep { $_->[8] == 5 || $_->[9] < $match_too_old_time } @$match_results;
-	print "Matches: $clan_id".join(",", map { $_->[0] } @$match_results)."\n";
 
 	for(@$challenges_too_old) {
 		$summary .= "A challenge from [i:$u]$_->[1]\[/i:$u] (".$c->render_clan($_->[2], $_->[3]).") was not answered within two weekly updates, so has expired with a penalty of 5 points.\n\n";
