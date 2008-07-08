@@ -521,10 +521,10 @@ sub forum_post_or_reply {
 	}
 	$this->db_do("INSERT INTO phpbb3_posts SET topic_id = ?, forum_id = ?, poster_id = ?, post_time = ?, enable_smilies = 0, post_subject = ?, post_text = ?, bbcode_uid = ?, bbcode_bitfield = ?", {}, $topic_id, $forum_id, 53, $post_time, $title, $content, $uuid, $bitfield) or die;
 	my $post_id = $this->lastid;
-	if ($new) {
-		$this->db_do("UPDATE phpbb3_topics SET topic_first_post_id = ?, topic_first_poster_name = ?, topic_replies = -1, topic_replies_real = -1 WHERE topic_id = ?", {}, $post_id, "Clans System", $topic_id) or die;
-	}
 	$this->db_do("UPDATE phpbb3_topics SET topic_last_post_id = ?, topic_last_post_time = ?, topic_last_post_subject = ?, topic_last_poster_id = ?, topic_last_poster_name = ?, topic_replies_real = topic_replies_real + 1, topic_replies = topic_replies + 1 WHERE topic_id = ?", {}, $post_id, $post_time, $title, 53, "Clans System", $topic_id) or die;
+	if ($new) {
+		$this->db_do("UPDATE phpbb3_topics SET topic_first_post_id = ?, topic_first_poster_name = ?, topic_replies = 0, topic_replies_real = 0 WHERE topic_id = ?", {}, $post_id, "Clans System", $topic_id) or die;
+	}
 	$this->db_do("UPDATE phpbb3_forums SET forum_last_post_id = ?, forum_last_post_time = ?, forum_last_post_subject = ?, forum_last_poster_id = ?, forum_last_poster_name = ? WHERE forum_id = ?", {}, $post_id, $post_time, $topic_title, 53, "Clans System", $forum_id) or die;
 	return wantarray ? ($post_id, $topic_id) : $post_id;
 }
