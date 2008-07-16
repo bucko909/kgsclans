@@ -1329,7 +1329,7 @@ accept_challenge => {
 		# Also update the forum post.
 		if ($p->{post_id}) {
 			$p->{user_name} = $c->db_selectone("SELECT username FROM phpbb3_users WHERE user_id = ?", {}, $c->{userid});
-			$c->db_do(qq|UPDATE phpbb3_posts SET post_content = CONCAT(post_content, "\n\nThis challenge was accepted by $p->{user_name} using team $p->{team_name}.") WHERE post_id = ?|, {}, $p->{post_id}) or return (0, "Database error.");
+			$c->db_do(qq|UPDATE phpbb3_posts SET post_text = CONCAT(post_text, "\n\nThis challenge was accepted by $p->{user_name} using team $p->{team_name}.") WHERE post_id = ?|, {}, $p->{post_id}) or return (0, "Database error.");
 		}
 		
 		return (1, "OK; accepted challenge.");
@@ -1365,7 +1365,7 @@ decline_challenge => {
 		$p->{post_id} = $c->db_selectone("SELECT forum_post_id FROM challenges WHERE id = ?", {}, $p->{challenge_id});
 		if ($p->{post_id}) {
 			$p->{user_name} = $c->db_selectone("SELECT username FROM phpbb3_users WHERE user_id = ?", {}, $c->{userid});
-			$c->db_do(qq|UPDATE phpbb3_posts SET post_content = CONCAT(post_content, "\n\nThis challenge was declined by $p->{user_name}.") WHERE post_id = ?|, {}, $p->{post_id}) or return (0, "Database error.");
+			$c->db_do(qq|UPDATE phpbb3_posts SET post_text = CONCAT(post_text, "\n\nThis challenge was declined by $p->{user_name}.") WHERE post_id = ?|, {}, $p->{post_id}) or return (0, "Database error.");
 		}
 		
 		if (!$c->db_do("DELETE FROM challenges WHERE id = ?", {}, $p->{challenge_id})) {

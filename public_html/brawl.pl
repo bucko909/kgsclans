@@ -14,7 +14,7 @@ my $c = Clans->new;
 $c->header("Clan Battles");
 
 my $mode = $c->param('mode') || 'battles';
-my @modes = qw/battles brawl_draw brawl_overview brawl_prelim/;
+my @modes = qw/battles teams brawl_draw brawl_overview brawl_prelim/;
 
 unless (grep { $_ eq $mode } @modes) {
 	$mode = 'battles';
@@ -27,7 +27,7 @@ print $c->h3("Quick Links");
 
 # TODO mask some off, add links for individual rounds.
 print qq{<p>Brawl: <a href="brawl.pl?mode=brawl_draw$periodparam">Draw Preview</a> | <a href="brawl.pl?mode=brawl_overview$periodparam">Overview</a> | <a href="brawl.pl?mode=battles&amp;brawl=prelim$periodparam">Preliminary Battles</a> | <a href="brawl.pl?mode=battles&amp;brawl=main$periodparam">Knockout Battles</a> | <a href="brawl.pl?mode=battles&amp;brawl=all$periodparam">All Battles</a> | <a href="brawl.pl?mode=battles&amp;brawl=all&amp;unfinished=1$periodparam">Current Round Battles</a></p>};
-print qq{<p>Team Battles: <a href="brawl.pl?mode=battles&amp;undecided=1&amp;brawl=no$periodparam">Currently Undecided</a> | <a href="brawl.pl?mode=battles&amp;age=2&amp;brawl=no$periodparam">Last 2 Weeks</a> | <a href="brawl.pl?mode=battles&amp;brawl=no$periodparam">All</a>};
+print qq{<p>Team Battles: <a href="brawl.pl?mode=teams$periodparam">Team List</a> | <a href="brawl.pl?mode=battles&amp;undecided=1&amp;brawl=no$periodparam">Currently Undecided</a> | <a href="brawl.pl?mode=battles&amp;age=2&amp;brawl=no$periodparam">Last 2 Weeks</a> | <a href="brawl.pl?mode=battles&amp;brawl=no$periodparam">All</a>};
 
 # TODO fix
 #my $user_clan = $c->db_select("SELECT id, name FROM clans INNER JOIN forumuser_clans ON clans.id = forumuser_clans.clan_id WHERE clanperiod = ? AND forumuser_clans.user_id = ?", {}, $period, $c->{userid});
@@ -62,6 +62,13 @@ if ($mode eq 'brawl_overview') {
 		print $c->h3("Preliminaries");
 		print brawl_prelim_overview($c, $period);
 	}
+} elsif ($mode eq 'teams') {
+	my $teams = $c->db_select("SELECT teams.id, teams.name, clans.id, clans.name, COUNT(*) AS cnt FROM team_seats INNER JOIN teams ON teams.id = team_seats.team_id INNER JOIN clans ON clans.id = teams.clan_id WHERE clans.period_id = ? GROUP BY teams.id HAVING cnt = 5", {}, $period);
+	print $c->h3("Team List");
+	print $c->p("The following teams have 5 players allocated to seats, and can thus play team matches.");
+	print "<ul>";
+	print "<li>$_->[1] (".$c->render_clan($_->[2], $_->[3]).")</li>" for(@$teams);
+	print "</ul>";
 } elsif ($mode eq 'battles') {
 	my ($SQL_where, $SQL_from, @params_where, @params_join) = ("1", "team_matches");
 	$SQL_from .= " LEFT OUTER JOIN brawl ON brawl.team_match_id = team_matches.id";
