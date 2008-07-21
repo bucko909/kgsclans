@@ -24,6 +24,8 @@ $t[2] = 0;
 our $end_time = timegm(@t);
 our $start_time = $end_time - 60*60*24*7;
 our $match_too_old_time = $start_time - 60*60*24*7;
+print strftime("%m/%d %H:%M", gmtime $match_too_old_time)."\n";
+print strftime("%m/%d %H:%M", gmtime $now_time)."\n";
 
 # Get forum activity. This needs to be done bang on midnight.
 our $period_info = $c->period_info();
@@ -172,6 +174,7 @@ sub match_summary {
 
 	for(@$challenges_too_old) {
 		$summary .= "A challenge from [i:$u]$_->[1]\[/i:$u] (".$c->render_clan($_->[2], $_->[3]).") was not answered within two weekly updates, so has expired with a penalty of 5 points.\n\n";
+#		$summary .= "A challenge from [i:$u]$_->[1]\[/i:$u] (".$c->render_clan($_->[2], $_->[3]).") was not answered within two weekly updates, so has expired.\n\n";
 		if ($dryrun) {
 			print "Removing five points from $clan_id.\n\n";
 		} else {
@@ -199,12 +202,12 @@ sub match_summary {
 				$c->db_do("UPDATE clans SET points = points + 10 WHERE id = ?", {}, $clan_id);
 			}
 		} else {
-			$summary .= "Since this match was not finished, the clan gets a 5 point penalty.\n\n";
-			if ($dryrun) {
-				print "Removing five points from $clan_id.\n\n";
-			} else {
-				$c->db_do("UPDATE clans SET points = points - 5 WHERE id = ?", {}, $clan_id);
-			}
+			$summary .= "Since this match was not fully finished, there are no bonus points.\n\n";
+#			if ($dryrun) {
+#				print "Removing five points from $clan_id.\n\n";
+#			} else {
+#				$c->db_do("UPDATE clans SET points = points - 5 WHERE id = ?", {}, $clan_id);
+#			}
 		}
 	}
 	return $summary;
@@ -216,7 +219,7 @@ sub check_groups {
 	my $group_check = '';
 	foreach my $dup (@duplicates) {
 		my @clanlist = map { /(.*)\((\d*)\)/; $c->render_clan($2, $1) } split /,/, $dup->[3];
-		$group_check .= qq|<a href="/forum/profile.php?mode=viewprofile&amp;u=$dup->[0]">$dup->[1]</a> is in multiple clans: |.join(", ", @clanlist)."\n\n";
+		$group_check .= qq|<a href="/forum/memberlist.php?mode=viewprofile&amp;u=$dup->[0]">$dup->[1]</a> is in multiple clans: |.join(", ", @clanlist)."\n\n";
 	}
 	return $group_check;
 }
@@ -233,7 +236,11 @@ for(@$results) {
 
 for my $match_id (keys %match_results) {
 	my $result = $match_results{$match_id};
-	$c->db_do("UPDATE team_matches SET winner=?, result_announced=1 WHERE id=?", {}, $result, $match_id);
+	if ($dryrun) {
+		print "Adding winner=$result and announced=1 to match $match_id.\n";
+	} else {
+		$c->db_do("UPDATE team_matches SET winner=?, result_announced=1 WHERE id=?", {}, $result, $match_id);
+	}
 }
 
 my ($clanresults) = $c->db_select("SELECT clans.id, clans.name, SUM(active.total) AS total FROM clans LEFT OUTER JOIN (SELECT DISTINCT mw.clan_id AS clan_id, COUNT(games.id) AS total FROM games INNER JOIN members mw ON white_id = mw.id WHERE time > ? AND time <= ? GROUP BY mw.clan_id UNION ALL SELECT mb.clan_id AS clan_id, COUNT(games.id) AS total FROM games INNER JOIN members mb ON black_id = mb.id WHERE time > ? AND time <= ? GROUP BY mb.clan_id) active ON clans.id = active.clan_id WHERE period_id = ? GROUP BY clans.id ORDER BY total DESC, clans.tag;", {}, $start_time, $end_time, $start_time, $end_time, $period_info->{id});
