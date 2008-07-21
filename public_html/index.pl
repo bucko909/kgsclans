@@ -348,7 +348,7 @@ BEGIN {
 			title => "Games (Pure)",
 			init => sub { $persist{mpf} = 0; $persist{mpf_2} = 0; },
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{mpf} += $_[0]; $persist{mpf_2} += $_[1]; "$_[0] ($_[1])" },
-			totdata => sub { "$persist{mpf} ($persist{mpf})" },
+			totdata => sub { "$persist{mpf} ($persist{mpf_2})" },
 		},
 		mpa => { # member_played_all
 			sqlcols => [qw/members.played/], # Pure needed for correction
@@ -369,7 +369,7 @@ BEGIN {
 			title => "Games Won (Pure)",
 			init => sub { $persist{mwf} = 0; $persist{mwf_2} = 0; },
 			data => sub { $_[0] ||= 0; $_[1] ||= 0; $persist{mwf} += $_[0]; $persist{mwf_2} += $_[1]; "$_[0] ($_[1])" },
-			totdata => sub { "$persist{mwf} ($persist{mwf})" },
+			totdata => sub { "$persist{mwf} ($persist{mwf_2})" },
 		},
 		mwa => { # member_played_all
 			sqlcols => [qw/members.won/], # Pure needed for correction

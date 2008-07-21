@@ -590,6 +590,11 @@ add_clan => {
 			$p->{forum_group_id} = $results->[0][1];
 			$p->{forum_leader_group_id} = $results->[0][2];
 		}
+
+		# Hopefully the next line should fix issues with the index not updating.
+		# TODO check.
+		unlink("forum/cache/sql_e4646055f69bcd0cb7ef3bbff697ee0c.php");
+
 		return (1, "Clan and forum added.");
 	}
 },
@@ -642,10 +647,10 @@ change_page => {
 			type => 'name_page($period_id)',
 		},
 		revision => {
-			type => 'revision_page($period_id,$name)',
+			type => 'revision_page($period_id,$page_name)',
 		},
 		content => {
-			type => 'content_page($period_id,$name,$revision)',
+			type => 'content_page($period_id,$page_name,$revision)',
 		},
 	],
 	action => sub {
@@ -806,7 +811,7 @@ change_clan_info => {
 			informational => 1,
 		},
 		newinfo => {
-			type => 'null_valid|info_clan($period_id,$clan_id)',
+			type => 'null_valid|size(40)|info_clan($period_id,$clan_id)',
 			brief => 'New description',
 			description => 'If your chosen description is not allowed, and you\'re trying to put something sensible in, please mention it on the Admin Stuff forum.',
 		},
@@ -864,7 +869,7 @@ add_team_game => {
 	categories => [ qw/clan admin/ ],
 	override_category => 'challenge',
 	extra_category => 'common',
-	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
+	description => 'This form allows you to let the system know that one of your members has played a team game. Please find the game on the KGS archives and put the URL in the form below.',
 	params => [
 		period_id => {
 			type => 'id_period',
@@ -931,7 +936,10 @@ add_team_game => {
 
 			if (!$p->{maintime} || $p->{maintime} < 1200) {
 				$p->{badrules} = 'maintime';
-			} elsif (!$p->{overtime} || $p->{overtime} !~ m[30/(\d+) Canadian] || $1 < 300) {
+			} elsif (!$p->{overtime}
+				|| ($p->{overtime} =~ m[(\d+)/(\d+) Canadian] && ($2 < 300 || $1 > 30))
+				|| ($p->{overtime} =~ m[(\d+)x(\d+) byo-yomi] && ($1 < 5 || $2 < 20))
+				|| ($p->{overtime} !~ m[(\d+)/(\d+) Canadian] && $p->{overtime} !~ m[(\d+)x(\d+) byo-yomi])) {
 				$p->{badrules} = 'overtime';
 			} elsif (!$p->{komi} || $p->{komi} != 6.5) {
 				$p->{badrules} = 'komi';
@@ -1602,7 +1610,8 @@ change_team_members => {
 	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
 	categories => [ qw/team clan admin/ ],
 	acts_on => 'team',
-	description => 'Here you can add members to a team.',
+	next_form => 'change_team_positions',
+	description => 'Here you can select the complete roster for a team. The roster will be completely wiped and then the members below added (seated players in this team remain on their seats).',
 	params => [
 		period_id => {
 			type => 'id_period',
@@ -1641,9 +1650,11 @@ change_team_members => {
 		my ($c, $p) = @_;
 
 		# Clear team rosters as appropriate.
-		$c->db_do('DELETE FROM team_members WHERE team_id = ?', {}, $p->{team_id});
+		$c->db_do('DELETE FROM team_members WHERE team_id = ?', {}, $p->{team_id}) or return (0, 'Database error removing old members from this team.');
 		# XXX not using prepare properly.
-		$c->db_do('DELETE FROM team_members WHERE member_id IN('.join(',',@{$p->{member_id}}).')');
+		$c->db_do('DELETE FROM team_members WHERE member_id IN('.join(',',@{$p->{member_id}}).')') or return (0, 'Database error removing members from old teams.');
+		$c->db_do('DELETE FROM team_seats WHERE member_id IN('.join(',',@{$p->{member_id}}).') AND team_id != ?', {}, $p->{team_id}) or return (0, 'Database error removing redundant seats.');
+		$c->db_do('DELETE FROM team_seats WHERE member_id NOT IN('.join(',',@{$p->{member_id}}).') AND team_id = ?', {}, $p->{team_id}) or return (0, 'Database error removing redundant seats.');
 
 		# Check each member has the points
 		$p->{max_members} = $c->get_option('BRAWLTEAMMAXMEMBERS', $p->{period_id});
@@ -1652,7 +1663,7 @@ change_team_members => {
 		}
 		for(@{$p->{member_id}}) {
 			if (!$c->db_do('INSERT INTO team_members SET team_id=?, member_id=?', {}, $p->{team_id}, $_)) {
-				return (0, "Database error.");
+				return (0, "Database error adding member to team.");
 			}
 		}
 		return (1, "Set complete team roster.");

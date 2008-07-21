@@ -483,7 +483,7 @@ sub fill_values {
 
 			if ($type_info->{list_default}) {
 				# Use this as the defaults.
-				if ($multi && !@{$info->{value}}) {
+				if ($multi && !$info->{value} || !@{$info->{value}}) {
 					$info->{auto_value} = [map { $_->[0] } @value_list];
 					$info->{value} = $info->{auto_value};
 				}
@@ -660,7 +660,7 @@ sub output_form {
 				# Since we have a list of valid values, we make a <select>
 				my $update_str = $info->{force_update} ? qq| onchange="document.$qname.process.value='';document.$qname.$qname\_changed.value='$qparam_name';document.$qname.submit();"| : "";
 				if ($multi) {
-					my $size = int(@{$info->{value_list}||[]} / 2)+1;
+					my $size = $info->{size} || int(@{$info->{value_list}||[]} / 2)+1;
 					$size = 3 if $size < 3;
 					$output .= qq|<select multiple="multiple" size="$size" name="$qname\_$qparam_name"$update_str>|;
 				} else {
@@ -682,8 +682,10 @@ sub output_form {
 				# No list of valid values. Make a text box.
 				# We may still be able to get the value based on our known
 				# params, though.
+				my $size = $info->{size} ? qq| size="$info->{size}"| : "";
+				print "$param_name $info->{size}\n";
 				my $value = $value ? qq| value="|.$c->escapeHTML($value).qq|"| : "";
-				$output .= qq|<input name="$qname\_$qparam_name" type="text"$value/>|;
+				$output .= qq|<input name="$qname\_$qparam_name" type="text"$value$size/>|;
 			}
 			if ($info->{focus}) {
 				$output .= qq|<script>set_focus=document.$qname.$qname\_$qparam_name;</script>|;
@@ -769,6 +771,11 @@ sub parse_form_def {
 			$type_info->{valid} = 1 if grep /^valid$/, @mods;
 			$type_info->{list_default} = 1 if grep /^list_default$/, @mods;
 			$type_info->{filter} = [ grep /^filter_/, @mods ];
+
+			if (my @sizes = grep /^size\((\d+)\)$/, @mods) {
+				$sizes[0] =~ /size\((\d+)\)/;
+				$info->{size} = $type_info->{size} = $1;
+			}
 
 			# Null is valid if it's valid for /all/ types.
 			if (!$type_info->{null_valid}) {
