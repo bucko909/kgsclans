@@ -793,7 +793,7 @@ change_clan_info => {
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/clan admin/ ],
 	acts_on => 'clan',
-	description => 'Here you may set a description for your clan. Some of this will be shown on the summary page, and all of it will be shown on your clan\'s info page.',
+	description => 'Here you may set a description for your clan. The first line will be shown on the last column of the main summary and the rest will be shown on your clan\'s info page.',
 	params => [
 		period_id => {
 			type => 'id_period',
@@ -815,6 +815,7 @@ change_clan_info => {
 			type => 'null_valid|size(40)|info_clan($period_id,$clan_id)',
 			brief => 'New description',
 			description => 'If your chosen description is not allowed, and you\'re trying to put something sensible in, please mention it on the Admin Stuff forum.',
+			input_type => 'textarea',
 		},
 	],
 	action => sub {
@@ -1547,9 +1548,16 @@ remove_team => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
+		$p->{challenge_id} = $c->db_selectone("SELECT id FROM challenges WHERE challenger_team_id = ?", {}, $p->{team_id});
+		$p->{match_id} = $c->db_selectone("SELECT id FROM team_match_teams WHERE team_id = ?", {}, $p->{team_id});
+		if ($p->{challenge_id}) {
+			return (0, "Sorry, your team has sent a challenge to another clan. The team can't be removed while the challenge exists.");
+		} elsif ($p->{match_id}) {
+			return (0, "Sorry, but you cannot remove a team which has played or is playing a match.");
+		}
 		# Splat members and stuff first.
-		$c->db_do('DELETE FROM team_members WHERE team_id=?', {}, $p->{team_id});
-		$c->db_do('DELETE FROM team_seats WHERE team_id=?', {}, $p->{team_id});
+		$c->db_do('DELETE FROM team_seats WHERE team_id=?', {}, $p->{team_id}) or return (0, "Database error removing seats.");
+		$c->db_do('DELETE FROM team_members WHERE team_id=?', {}, $p->{team_id}) or return (0, "Database error removing members.");
 		if ($c->db_do('DELETE FROM teams WHERE id=?', {}, $p->{team_id})) {
 			return (1, "Deleted team.");
 		} else {

@@ -52,7 +52,7 @@ if ($page->[1]) {
 		print " Old revisions: ".join(' ', map { qq|<a href="index.pl?$lqstring&amp;revision=$_">$_</a>| } reverse (1..$page->[1]-1)).".";
 	}
 	if ($c->is_admin) {
-		print qq| <a href="admin.pl?form=change_page&amp;change_page_name=$pagename&amp;change_page_revision=$page->[1]">Edit</a>.|;
+		print qq| <a href="admin.pl?form=change_page&amp;change_page_page_name=$pagename&amp;change_page_revision=$page->[1]">Edit</a>.|;
 	}
 	print "</p>";
 } else {
@@ -87,14 +87,15 @@ BEGIN {
 			data => sub { $_[0] },
 		},
 		cr => { # clan_recruiting => {
-			sqlcols => [qw/clans.looking/],
-			title => "Recruitment Info",
+			sqlcols => [ qw/SUBSTRING_INDEX(clans.looking,'\n',1)/ ],
+			title => "Description",
 			data => sub { $_[0] || "" },
 		},
 		cf => { # clan_forum => {
-			sqlcols => [qw/clans.forum_id clans.forum_private_id/],
+			sqlcols => [qw/clans.forum_id clans.forum_private_id clans.id/],
 			title => "Clan Forum",
-			data => sub { ($_[0] ? "<a href=\"/forum/viewforum.php?f=$_[0]\">Public</a>" : "").($_[1] && 0 ? "<a href=\"/forum/viewforum.php?f=$_[1]\">Private</a>" : "") }, # TODO
+			init => sub { $persist{cf} = $c->is_clan_member },
+			data => sub { ($_[0] ? "<a href=\"/forum/viewforum.php?f=$_[0]\">Public</a>" : "").($_[1] && $persist{cf} == $_[2] ? " / <a href=\"/forum/viewforum.php?f=$_[1]\">Private</a>" : "") }, # TODO
 		},
 		cl => { # clan_leader => {
 			sqlcols => [qw/members.id members.name members.rank/],
@@ -795,19 +796,6 @@ sub clan_team_public_memberlist {
 	return $result;
 }
 
-sub main_newperiod {
-	# Does not work yet, but here is SQL I used last time:
-	my $SQL = '
-	INSERT INTO period_ids VALUES($newid, $starttime, $endtime);
-	INSERT INTO front_page SELECT text, $newid, textid FROM front_page WHERE period_id = $oldid;
-	INSERT INTO clans SELECT NULL, clans.name, clans.regex, 0, clans.userid, clans.tag, clans.url, clans.looking, $newid, 0 FROM clans INNER JOIN members ON clans.id = members.clan_id WHERE period_id = $oldid GROUP BY clans.id HAVING SUM(played) >= $clanthreshold;
-	DELETE FROM users USING users LEFT OUTER JOIN clans ON clans.userid = users.id AND clans.period_id = $newid WHERE users.adminlevel = 0 AND users.id != 1 AND clans.id IS NULL;
-	INSERT INTO members SELECT NULL, members.name, c2.id, 0, 0, 0, 0, NULL FROM members INNER JOIN clans c1 ON members.clan_id = c1.id AND c1.period_id = $oldid INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.period_id = $newid WHERE played > $memberthreshold;
-	INSERT INTO kgs_usernames SELECT NULL, 0, m2.id, kgs_usernames.nick, NULL, $newid, $time FROM kgs_usernames INNER JOIN members m1 ON kgs_usernames.member_id = m1.id INNER JOIN clans c1 ON m1.clan_id = c1.id AND c1.period_id = $oldid INNER JOIN clans c2 ON c1.tag = c2.tag AND c2.period_id = $newid INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;
-	CREATE TEMPORARY TABLE temp SELECT c2.id, c1.leader_id FROM clans c1 INNER JOIN clans c2 ON c1.tag = c2.tag AND c1.period_id = 2 AND c2.period_id = 3 INNER JOIN members m1 on m1.id = c1.leader_id INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;
-	UPDATE clans INNER JOIN temp ON clans.id = temp.id SET clans.leader_id = temp.leader_id;';
-}
-
 sub main_renderpage {
 	my ($c, $content) = @_;
 
@@ -883,6 +871,17 @@ sub main_format {
 		CLAN => sub {
 			if ($_[0]->{clan_info}) {
 				return $_[0]->render_clan($_[0]->{clan_info}{id});
+			} else {
+				return "?";
+			}
+		},
+		CLANINFO => sub {
+			if ($_[0]->{clan_info}) {
+				my $inf = $_[0]->db_selectone("SELECT looking FROM clans WHERE id = ?", {}, $_[0]->{clan_info}{id});
+				$inf =~ s/^.*?\n//;
+				my $textile = Text::Textile->new();
+				$inf = $textile->process($inf);
+				return $inf;
 			} else {
 				return "?";
 			}
