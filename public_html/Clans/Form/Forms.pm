@@ -1613,7 +1613,7 @@ change_team_members => {
 	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
 	categories => [ qw/team clan admin/ ],
 	acts_on => 'team',
-	next_form => 'change_team_positions',
+	next_form => 'change_team_seats',
 	description => 'Here you can select the complete roster for a team. The roster will be completely wiped and then the members below added (seated players in this team remain on their seats).',
 	params => [
 		period_id => {
@@ -1727,8 +1727,118 @@ add_member_to_team => {
 		}
 	},
 },
+change_team_seats => {
+	brief => 'Change seats of team',
+	checks => 'clan_moderator($clan_id)|period_active($period_id)',
+	categories => [ qw/team member clan admin/ ],
+	acts_on => 'team',
+	description => 'Choose the lineup for your team here. You can only select people who are already in the team (use Select Team Members to choose this).',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		team_id => {
+			type => 'id_team($period_id,$clan_id)',
+		},
+		team_name => {
+			type => 'name_team($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		old_seats => {
+			type => 'positions_team($period_id,$clan_id,$team_id)',
+			html => 1,
+			informational => 1,
+			brief => 'Current positions',
+		},
+		mem1_id => {
+			type => 'id_member($period_id,$clan_id,$team_id,1)',
+			brief => 'Seat 1',
+		},
+		mem1_name => {
+			type => 'name_member($period_id,$clan_id,$mem1_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		mem2_id => {
+			type => 'null_valid|id_member($period_id,$clan_id,$team_id,2)',
+			brief => 'Seat 2',
+		},
+		mem2_name => {
+			type => 'null_valid|name_member($period_id,$clan_id,$mem2_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		mem3_id => {
+			type => 'null_valid|id_member($period_id,$clan_id,$team_id,3)',
+			brief => 'Seat 3',
+		},
+		mem3_name => {
+			type => 'null_valid|name_member($period_id,$clan_id,$mem3_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		mem4_id => {
+			type => 'null_valid|id_member($period_id,$clan_id,$team_id,4)',
+			brief => 'Seat 4',
+		},
+		mem4_name => {
+			type => 'null_valid|name_member($period_id,$clan_id,$mem4_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		mem5_id => {
+			type => 'null_valid|id_member($period_id,$clan_id,$team_id,5)',
+			brief => 'Seat 5',
+		},
+		mem5_name => {
+			type => 'null_valid|name_member($period_id,$clan_id,$mem5_id)',
+			hidden => 1,
+			informational => 1,
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		# Check all members are different.
+		my @member_ids;
+		my @id_map;
+		my %counter;
+		for (1 .. 5) {
+			push @member_ids, $p->{'mem'.$_.'_id'} if $p->{'mem'.$_.'_id'};
+			$id_map[$_-1] = $p->{'mem'.$_.'_id'};
+			$counter{$p->{'mem'.$_.'_id'}} = 1 if $p->{'mem'.$_.'_id'};
+		}
+		$p->{unique_seats} = keys %counter;
+		$p->{set_seats} = @member_ids;
+		if ($p->{unique_seats} != $p->{set_seats}) {
+			return (0, "You used the same member several times!");
+		}
+
+		# Clear members from team roster(s).
+		for (@member_ids) {
+			$c->db_do('DELETE FROM team_seats WHERE member_id = ?', {}, $_) or return (0, "Database error clearing member $_ from rosters.");
+		}
+		$c->db_do('DELETE FROM team_seats WHERE team_id = ?', {}, $p->{team_id}) or return (0, "Database error clearing team roster.");
+
+		for (0..4) {
+			next unless $member_ids[$_];
+			if (!$c->db_do('INSERT INTO team_seats SET team_id=?, member_id=?, seat_no=?', {}, $p->{team_id}, $member_ids[$_], $_)) {
+				return (0, "Database error adding seat ".($_+1).".");
+			}
+		}
+		return (1, "Changed team roster.");
+	},
+},
 change_team_seat => {
-	brief => 'Change seat of team member',
+	brief => 'Change seat of team member (old)',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/team member clan admin/ ],
 	acts_on => 'team',

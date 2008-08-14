@@ -69,6 +69,9 @@ sub die_fatal_badinput {
 
 sub render_member {
 	my $this = shift;
+	if (!$_[0]) {
+		return "???";
+	}
 	if (ref $_[0]) {
 		@_ = ($_[0]{id}, $_[0]{name}, $_[0]{rank});
 	} elsif (!$_[1]) {
@@ -87,6 +90,9 @@ sub render_member {
 
 sub render_clan {
 	my $this = shift;
+	if (!$_[0]) {
+		return "???";
+	}
 	if (ref $_[0]) {
 		@_ = ($_[0]{id}, $_[0]{name});
 	} elsif (!$_[1]) {
@@ -98,6 +104,9 @@ sub render_clan {
 
 sub render_team {
 	my $this = shift;
+	if (!$_[0]) {
+		return "???";
+	}
 	if (ref $_[0]) {
 		@_ = ($_[0]{id}, $_[0]{name});
 		my $clan_id = $this->db_selectone("SELECT clan_id FROM teams WHERE id = ?", {}, $_[0]);
@@ -356,7 +365,7 @@ sub is_admin {
 
 sub is_clan_leader {
 	my ($c, $clan_id) = @_;
-	return 1 if $c->is_admin || $c->id_clan_leader_noadmin($clan_id);
+	return 1 if $c->is_admin || $c->is_clan_leader_noadmin($clan_id);
 }
 
 sub is_clan_leader_noadmin {
@@ -379,7 +388,7 @@ sub is_clan_leader_noadmin {
 
 sub is_clan_moderator {
 	my ($c, $clan_id) = @_;
-	return 1 if $c->is_admin || $c->id_clan_moderator_noadmin($clan_id);
+	return 1 if $c->is_admin || $c->is_clan_moderator_noadmin($clan_id);
 }
 
 sub is_clan_moderator_noadmin {

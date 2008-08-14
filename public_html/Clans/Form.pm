@@ -454,7 +454,7 @@ sub fill_values {
 				} else {
 					my $getval = $get_fn->($c, @params);
 					if ($getval) {
-						$info->{auto_value} = $multi ? [ $getval ] : $getval;
+						$info->{auto_value} = $getval;
 						$info->{value} = $info->{auto_value} unless exists $info->{user_value};
 					}
 				}
@@ -519,10 +519,10 @@ sub fill_values {
 				$reasons{$param_name} ||= "$oldsize invalid value(s) detected; removing." if $oldsize != scalar @{$info->{user_value}||[]};
 			} else {
 				if (!grep { $_->[0] eq $info->{value} } @{$info->{value_list}}) {
+					$reasons{$param_name} ||= "Invalid value ($info->{value}) detected; removing.";
 					delete $info->{user_value};
 					delete $info->{auto_value};
 					undef $info->{value};
-					$reasons{$param_name} ||= 'Invalid value detected; removing.';
 				}
 			}
 		}

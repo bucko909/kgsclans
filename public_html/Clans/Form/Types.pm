@@ -266,6 +266,12 @@ id_member => {
 			return $c->db_selectone("SELECT id, members.played + members.played_pure FROM members WHERE id = ?", {}, $_);
 		}
 	},
+	get => sub {
+		my ($c, $period, $clan, $team, $seat) = @_;
+		if ($period && $clan && $team && $seat) {
+			return $c->db_selectone("SELECT member_id FROM team_seats WHERE team_id = ? AND seat_no = ?", {}, $team, $seat-1);
+		}
+	},
 	list => sub {
 		my ($c, $period, $clan, $team) = @_;
 		if ($period && $clan && $team) {
@@ -433,10 +439,10 @@ positions_team => {
 	exists => undef,
 #	list => sub {}
 	get => sub {
-		my ($c, $period, $clan, $teamid) = @_;
-		if ($teamid) {
+		my ($c, $period, $clan, $team) = @_;
+		if ($team) {
 			# TODO should be more generic
-			my $results = $c->db_select("SELECT team_seats.seat_no, members.id, members.name, members.rank FROM team_seats INNER JOIN members ON members.id = team_seats.member_id WHERE team_seats.team_id = ? ORDER BY team_seats.seat_no", {}, $teamid);
+			my $results = $c->db_select("SELECT team_seats.seat_no, members.id, members.name, members.rank FROM team_seats INNER JOIN members ON members.id = team_seats.member_id WHERE team_seats.team_id = ? ORDER BY team_seats.seat_no", {}, $team);
 			return "Team has no members." if !$results || !@$results;
 			my $result = "<ul>";
 			for(@$results) {
