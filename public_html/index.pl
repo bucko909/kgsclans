@@ -726,8 +726,10 @@ sub clan_teamlist {
 		}
 	}
 	if (@$teams) {
+		my $count = 1;
 		for(@$teams) {
-			$out .= "<h4>Team $_->[2]: ";
+			$out .= "<h4>Team $count: ";
+			$count++;
 			$out .= $_->[1] ? $_->[1] : "Main";
 			if ($_->[3] == 5) {
 				$out .= " (ready for matches)";

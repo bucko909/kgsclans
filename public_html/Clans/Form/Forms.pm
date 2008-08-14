@@ -1460,18 +1460,20 @@ change_team_order => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		$p->{old_number} = $c->db_selectone("SELECT team_number FROM teams WHERE team_id = ?", {}, $p->{team_id});
-		$p->{new_number} = $p->{old_number} + ($p->{updown} eq 'Down' ? 1 : -1);
-		$p->{total_teams} = $c->db_selectone("SELECT COUNT(*) FROM teams WHERE clan_id = ?", {}, $p->{clan_id});
-		if ($p->{new_number} > $p->{total_teams}) {
-			return (0, "Cannot move a team below the bottom.");
+		$p->{old_number} = $c->db_selectone("SELECT team_number FROM teams WHERE id = ?", {}, $p->{team_id});
+		if ($p->{updown} eq 'Down') {
+			$p->{swap_team_id} = $c->db_selectone("SELECT id FROM teams WHERE clan_id = ? AND team_number > ? ORDER BY team_number ASC", {}, $p->{clan_id}, $p->{old_number});
+		} else {
+			$p->{swap_team_id} = $c->db_selectone("SELECT id FROM teams WHERE clan_id = ? AND team_number < ? ORDER BY team_number DESC", {}, $p->{clan_id}, $p->{old_number});
 		}
-		if ($p->{new_number} < 1) {
-			return (0, "Cannot move a team above the top.");
+		if (!$p->{swap_team_id}) {
+			return (0, "Cannot move a team below the bottom or above the top.");
 		}
-		$c->db_do("UPDATE teams SET team_number = ? WHERE team_number = ? AND clan_id = ?", {}, 100, $p->{old_number}, $p->{clan_id});
-		$c->db_do("UPDATE teams SET team_number = ? WHERE team_number = ? AND clan_id = ?", {}, $p->{old_number}, $p->{new_number}, $p->{clan_id});
-		$c->db_do("UPDATE teams SET team_number = ? WHERE team_number = ? AND clan_id = ?", {}, $p->{new_number}, 100, $p->{clan_id});
+		$p->{new_number} = $c->db_selectone("SELECT team_number FROM teams WHERE id = ?", {}, $p->{swap_team_id});
+		$p->{temp_number} = $c->db_selectone("SELECT MAX(team_number)+1 FROM teams WHERE clan_id = ?", {}, $p->{clan_id});
+		$c->db_do("UPDATE teams SET team_number = ? WHERE id = ?", {}, $p->{temp_number}, $p->{swap_team_id});
+		$c->db_do("UPDATE teams SET team_number = ? WHERE id = ?", {}, $p->{new_number}, $p->{team_id});
+		$c->db_do("UPDATE teams SET team_number = ? WHERE id = ?", {}, $p->{old_number}, $p->{swap_team_id});
 		return (1, "Altered order of teams.");
 	},
 },

@@ -108,6 +108,11 @@ sub process_form {
 		if ($c->is_admin) {
 			print $c->p(qq|To <a href="admin.pl">overall admin</a>.|);
 		}
+		{my $act;
+		if (($act = $forms{$name}{acts_on}) && $act !~ /-$/) {
+			$act =~ s/\+$//;
+			print $c->form_list($act.'+');
+		}}
 		$c->footer;
 		exit 0;
 	} else {
@@ -181,6 +186,7 @@ sub gen_form {
 
 sub form_list {
 	my ($c, $category) = @_;
+	my $add_thingy = $category =~ s/\+$//;
 	my @form_names = grep { grep { $_ eq $category } @{$forms{$_}{categories}} } keys %forms;
 	my %param_cache;
 	$access_cache = {};
@@ -191,6 +197,7 @@ sub form_list {
 	my $show_hidden = $c->param('show_hidden');
 	for my $form_name (@form_names) {
 		next if $forms{$form_name}{hidden} && !$show_hidden;
+		next if $add_thingy && $forms{$form_name}{acts_on} =~ /\+$/;
  		if ($forms{$form_name}{extra_category}) {
 			$category_forms{$forms{$form_name}{extra_category}} ||= [];
 			push @{$category_forms{$forms{$form_name}{extra_category}}}, $form_name;
