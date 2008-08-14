@@ -1,5 +1,7 @@
 #!/bin/bash
 
+(echo -n 'Beginning nightly update: '; date) >> /home/kgs/UPDATE.ERR
+
 cd /home/kgs/public_html
 REQUEST_METHOD=GET REMOTE_USER=bucko QUERY_STRING='mode=all&delay=10' ./update.pl > /home/kgs/UPDATE.OUT 2>> /home/kgs/UPDATE.ERR
 cd /home/kgs

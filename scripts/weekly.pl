@@ -11,6 +11,7 @@ $SIG{__DIE__} = sub { no warnings; undef $SIG{__DIE__}; confess $_[0] };
 $SIG{__WARN__} = sub { local $SIG{__WARN__}; Carp::cluck $_[0]};
 
 our $c = Clans->new;
+$c->{userid} = 53; # Clan System
 
 our $post_time = time();
 
@@ -122,6 +123,7 @@ sub inactive_new_members {
 			if ($dryrun) {
 				print "Would delete member $_->[0].\n";
 			} else {
+				$c->log('remove_member', 1, '', { clan_id => $clan_id, clan_name => $clan_name, member_id => $_->[0], member_name => $_->[1], });
 				$c->db_do("DELETE FROM kgs_usernames WHERE member_id = ?", {}, $_->[0]);
 				$c->db_do("DELETE FROM members WHERE id = ?", {}, $_->[0]);
 			}
@@ -226,7 +228,7 @@ sub check_groups {
 
 my ($results) = $c->db_select('SELECT id, name, forum_id FROM clans WHERE forum_id IS NOT NULL AND period_id = ?', {}, $period_info->{id});
 for(@$results) {
-	my $summary = "Summary for ".$c->render_clan($_->[0], $_->[1])." for the period ".strftime("%d/%m/%y", gmtime $start_time)." to ".strftime("%d/%m/%y", gmtime $end_time).":\n\n".game_summary($_->[0]).inactive_new_members($_->[0]).forum_activity($_->[0]).match_summary($_->[0]).check_groups($_->[0]);
+	my $summary = "Summary for ".$c->render_clan($_->[0], $_->[1])." for the period ".strftime("%d/%m/%y", gmtime $start_time)." to ".strftime("%d/%m/%y", gmtime $end_time).":\n\n".game_summary($_->[0]).inactive_new_members($_->[0], $_->[1]).forum_activity($_->[0]).match_summary($_->[0]).check_groups($_->[0]);
 	if ($dryrun) {
 		print qq|Posting to "Clan Game Summary" with message:\n\n$summary\n\n|;
 	} else {
