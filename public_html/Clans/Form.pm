@@ -347,6 +347,7 @@ sub fill_values {
 
 		# Do we have a value for this param supplied by the form?
 		if (defined($value = $c->param($name.'_'.$param_name))) {
+			$value =~ s/^ +| +$//g;
 			if (!exists $info->{auto_value} || $info->{auto_value} ne $value) {
 				if (is('multi', $info, 'admin')) {
 					$info->{user_value} = [ $c->param($name.'_'.$param_name) ];
@@ -683,7 +684,6 @@ sub output_form {
 				# We may still be able to get the value based on our known
 				# params, though.
 				my $size = $info->{size} ? qq| size="$info->{size}"| : "";
-				print "$param_name $info->{size}\n";
 				my $value = $value ? qq| value="|.$c->escapeHTML($value).qq|"| : "";
 				$output .= qq|<input name="$qname\_$qparam_name" type="text"$value$size/>|;
 			}

@@ -237,14 +237,15 @@ sub getnewgames {
 		my $url = $1;
 		my $quser = quotemeta $user;
 		my ($white, $black);
-		if ($3 && ($3 =~ /$quser/i || $5 =~ /$quser/i)) {
-			($white, $black) = ($3, $5);
+		my $won = $12;
+		my @n = ($2, $3, $4, $5);;
+		if ($n[1] && ($n[1] =~ /$quser/i || $n[3] =~ /$quser/i)) {
+			($white, $black) = ($n[1], $n[3]);
 			$url .= '?rengo2';
 		} else {
-			($white, $black) = ($2, $4);
-			$url .= '?rengo1' if $3;
+			($white, $black) = ($n[0], $n[2]);
+			$url .= '?rengo1' if $n[1];
 		}
-		my $won = $12;
 		my ($wrank, $brank);
 		$wrank = rank($1) if $white =~ s/\s+\[(.*)\]//;
 		$brank = rank($1) if $black =~ s/\s+\[(.*)\]//;

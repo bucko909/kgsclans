@@ -920,6 +920,9 @@ add_team_game => {
 			}
 			use LWP::Simple;
 			$p->{content} = get($p->{url});
+			if (!$p->{content}) {
+				return (0, "The URL you provided could not be loaded, or pointed to an empty file. Please check you copied it correctly.");
+			}
 
 			$p->{black} = $1 if ($p->{content} =~ /PB\[([^\]]+)\]/);
 			$p->{white} = $1 if ($p->{content} =~ /PW\[([^\]]+)\]/);
