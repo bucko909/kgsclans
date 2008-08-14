@@ -136,7 +136,14 @@ sub header {
 
 	my $period = $cgi->param('period') ? '&amp;period='.$cgi->param('period') : '';
 
-	print qq{<p class=nav><a href="index.pl?page=index$period">Summary</a> | <a href="index.pl?page=stats$period">Stats</a> | <a href="index.pl?page=help$period">Help</a> | <a href="/forum">Forum</a> | <a href="/brawl.pl?mode=overview$period">Brawl</a></p>};
+	my $admin = '';
+	if (my $clan_id = $this->is_clan_moderator_noadmin) {
+		$admin .= qq{ | <a href="/admin.pl?clan_id=$clan_id">Clan Admin</a>};
+	}
+	if ($this->is_admin) {
+		$admin .= qq{ | <a href="/admin.pl">Full Admin</a>};
+	}
+	print qq{<p class=nav><a href="index.pl?page=index$period">Summary</a> | <a href="index.pl?page=stats$period">Stats</a> | <a href="index.pl?page=help$period">Help</a> | <a href="/forum">Forum</a> | <a href="/brawl.pl?mode=overview$period">Brawl</a>$admin</p>};
 
 	print $cgi->h2($_[1]) if $_[1];
 	$this->{cgi} = $cgi;
@@ -349,7 +356,11 @@ sub is_admin {
 
 sub is_clan_leader {
 	my ($c, $clan_id) = @_;
-	return 1 if $c->is_admin;
+	return 1 if $c->is_admin || $c->id_clan_leader_noadmin($clan_id);
+}
+
+sub is_clan_leader_noadmin {
+	my ($c, $clan_id) = @_;
 	$c->{is} ||= {};
 	my $is_leader;
 	if ($c->{phpbbsess}{groupids}) {
@@ -368,7 +379,11 @@ sub is_clan_leader {
 
 sub is_clan_moderator {
 	my ($c, $clan_id) = @_;
-	return 1 if $c->is_admin;
+	return 1 if $c->is_admin || $c->id_clan_moderator_noadmin($clan_id);
+}
+
+sub is_clan_moderator_noadmin {
+	my ($c, $clan_id) = @_;
 	my $clan_check = $clan_id ? $clan_id : 'any';
 	$c->{is} ||= {};
 	$c->{is}{moderator} ||= {};
