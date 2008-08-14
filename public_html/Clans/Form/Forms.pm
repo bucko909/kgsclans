@@ -464,6 +464,7 @@ brawl_draw => {
 add_clan => {
 	# Add clan. Autogen form on admin page.
 	brief => 'Add clan',
+	repeatable => 1,
 	checks => 'admin',
 	categories => [ qw/admin/ ],
 	acts_on => 'clan+',
@@ -865,6 +866,7 @@ change_clan_leader => {
 },
 add_team_game => {
 	brief => 'Add team game',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/clan admin/ ],
 	override_category => 'challenge',
@@ -1039,9 +1041,11 @@ add_team_game => {
 },
 add_member => {
 	brief => 'Add member',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/member clan admin/ ],
 	acts_on => 'member+',
+	next_form => 'add_kgs_username',
 	extra_category => 'common',
 	description => 'You can add a new member to your clan with this form. If you just want to add another KGS username to an existing member, you\'re on the wrong form.',
 	params => [
@@ -1157,6 +1161,7 @@ add_private_clan_forum => {
 },
 remove_member => {
 	brief => 'Remove clan member',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/member clan admin/ ],
 	acts_on => 'member-',
@@ -1202,6 +1207,7 @@ remove_member => {
 },
 add_challenge => {
 	brief => 'Challenge a clan',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/challenge clan admin/ ],
 	acts_on => 'challenge+',
@@ -1391,6 +1397,7 @@ add_team => {
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
 	categories => [ qw/team clan admin/ ],
 	acts_on => 'team+',
+	next_form => 'change_team_members',
 	description => 'This form allows you to add a new team for your clan. Note that it currently does not check you have met the requirements for entering teams into the brawl, so even if you can add a team it doesn\'t mean it will be entered into the brawl.',
 	params => [
 		period_id => {
@@ -1550,6 +1557,8 @@ remove_team => {
 },
 remove_member_from_team => {
 	brief => 'Remove member from team',
+	repeatable => 1,
+	hidden => 1,
 	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
 	categories => [ qw/team member clan admin/ ],
 	acts_on => 'team',
@@ -1654,10 +1663,14 @@ change_team_members => {
 
 		# Clear team rosters as appropriate.
 		$c->db_do('DELETE FROM team_members WHERE team_id = ?', {}, $p->{team_id}) or return (0, 'Database error removing old members from this team.');
-		# XXX not using prepare properly.
-		$c->db_do('DELETE FROM team_members WHERE member_id IN('.join(',',@{$p->{member_id}}).')') or return (0, 'Database error removing members from old teams.');
-		$c->db_do('DELETE FROM team_seats WHERE member_id IN('.join(',',@{$p->{member_id}}).') AND team_id != ?', {}, $p->{team_id}) or return (0, 'Database error removing redundant seats.');
-		$c->db_do('DELETE FROM team_seats WHERE member_id NOT IN('.join(',',@{$p->{member_id}}).') AND team_id = ?', {}, $p->{team_id}) or return (0, 'Database error removing redundant seats.');
+		if (@{$p->{member_id}}) {
+			# XXX not using prepare properly.
+			$c->db_do('DELETE FROM team_members WHERE member_id IN('.join(',',@{$p->{member_id}}).')') or return (0, 'Database error removing members from old teams.');
+			$c->db_do('DELETE FROM team_seats WHERE member_id IN('.join(',',@{$p->{member_id}}).') AND team_id != ?', {}, $p->{team_id}) or return (0, 'Database error clearing member seats.');
+			$c->db_do('DELETE FROM team_seats WHERE member_id NOT IN('.join(',',@{$p->{member_id}}).') AND team_id = ?', {}, $p->{team_id}) or return (0, 'Database error clearing team seats.');
+		} else {
+			$c->db_do('DELETE FROM team_seats WHERE team_id = ?', {}, $p->{team_id}) or return (0, 'Database error clearing seats.');
+		}
 
 		# Check each member has the points
 		$p->{max_members} = $c->get_option('BRAWLTEAMMAXMEMBERS', $p->{period_id});
@@ -1674,6 +1687,8 @@ change_team_members => {
 },
 add_member_to_team => {
 	brief => 'Add member to team',
+	hidden => 1,
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
 	categories => [ qw/team member clan admin/ ],
 	acts_on => 'team',
@@ -1728,7 +1743,7 @@ add_member_to_team => {
 	},
 },
 change_team_seats => {
-	brief => 'Change seats of team',
+	brief => 'Change seating of team members',
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/team member clan admin/ ],
 	acts_on => 'team',
@@ -1838,7 +1853,9 @@ change_team_seats => {
 	},
 },
 change_team_seat => {
-	brief => 'Change seat of team member (old)',
+	brief => 'Change seat of team member',
+	repeatable => 1,
+	hidden => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/team member clan admin/ ],
 	acts_on => 'team',
@@ -1898,6 +1915,7 @@ change_team_seat => {
 },
 change_member_name => {
 	brief => 'Change member name',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/member clan admin/ ],
 	acts_on => 'member',
@@ -1939,6 +1957,7 @@ change_member_name => {
 },
 change_member_rank => {
 	brief => 'Change member rank',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/member clan admin/ ],
 	acts_on => 'member',
@@ -1985,6 +2004,7 @@ change_member_rank => {
 },
 add_kgs_username => {
 	brief => 'Add KGS username to member',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/alias member clan admin/ ], 
 	acts_on => 'alias+',
@@ -2041,6 +2061,7 @@ add_kgs_username => {
 },
 remove_kgs_username => {
 	brief => 'Remove KGS username from member',
+	repeatable => 1,
 	checks => 'clan_moderator($clan_id)|period_active($period_id)',
 	categories => [ qw/alias member clan admin/ ],
 	acts_on => 'alias-',

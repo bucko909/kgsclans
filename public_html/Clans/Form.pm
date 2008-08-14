@@ -79,11 +79,28 @@ sub process_form {
 				print $c->p("Failure: $reason");
 			}
 		}
-		if ($params{member_id}) {
-			print $c->p(qq|To member <a href="admin.pl?member_id=$params{member_id}">admin</a> or <a href="index.pl?page=games&amp;member=$params{member_id}">game list</a>.|);
+		if (my $next = $forms{$name}{next_form}) {
+			my $acts_on = $forms{$name}{acts_on};
+			my $act_params = '';
+			if ($acts_on =~ /^team/) {
+				$act_params = qq|$next\_category=team&amp;$next\_team_id=$params{team_id}|;
+			} elsif ($acts_on =~ /^member/) {
+				$act_params = qq|$next\_category=member&amp;$next\_member_id=$params{member_id}|;
+			} elsif ($acts_on =~ /^clan/) {
+				$act_params = qq|$next\_category=clan&amp;$next\_clan_id=$params{clan_id}|;
+			}
+			print $c->p(qq|<b>Recommended action</b>: <a href="admin.pl?form=$next&amp;$act_params">$forms{$next}{brief}</a>.|);
 		}
-		if ($params{team_id}) {
-			print $c->p(qq|To <a href="admin.pl?team_id=$params{team_id}">team admin</a>.|);
+		if ($forms{$name}{repeatable}) {
+			print qq|<form name="$name" method="post">|;
+			print qq|<input type="hidden" name="form" value="$name"/>|;
+			print qq|<input type="hidden" name="$name\_category" value="$category"/>|;
+			for my $param_name (keys %$input_params_info) {
+				next if is('informational', $input_params_info->{$param_name}, $category);
+				my $value = $input_params_info->{$param_name}{value};
+				print qq|<input type="hidden" name="$name\_$param_name" value="|.$c->escapeHTML($value).qq|"/>| if $value;
+			}
+			print qq|</form><p><b>Repeatable action</b>: <a href="javascript:document.$name.submit()">Do this form again</a>.</p>|;
 		}
 		if ($params{clan_id}) {
 			print $c->p(qq|To clan <a href="admin.pl?clan_id=$params{clan_id}">admin</a> or <a href="index.pl?page=clan&amp;clan=$params{clan_id}">member list</a>.|);
@@ -91,16 +108,6 @@ sub process_form {
 		if ($c->is_admin) {
 			print $c->p(qq|To <a href="admin.pl">overall admin</a>.|);
 		}
-		print $c->p(qq|To <a href="index.pl">summary</a>.|);
-		print qq|<form name="$name" method="post">|;
-		print qq|<input type="hidden" name="form" value="$name"/>|;
-		print qq|<input type="hidden" name="$name\_category" value="$category"/>|;
-		for my $param_name (keys %$input_params_info) {
-			next if is('informational', $input_params_info->{$param_name}, $category);
-			my $value = $input_params_info->{$param_name}{value};
-			print qq|<input type="hidden" name="$name\_$param_name" value="|.$c->escapeHTML($value).qq|"/>| if $value;
-		}
-		print qq|</form><p>Or you can <a href="javascript:document.$name.submit()">do this form again</a>.</p>|;
 		$c->footer;
 		exit 0;
 	} else {
@@ -181,8 +188,10 @@ sub form_list {
 	$check_cache = {};
 	my %category_forms;
 	my %sort;
+	my $show_hidden = $c->param('show_hidden');
 	for my $form_name (@form_names) {
-		if ($forms{$form_name}{extra_category}) {
+		next if $forms{$form_name}{hidden} && !$show_hidden;
+ 		if ($forms{$form_name}{extra_category}) {
 			$category_forms{$forms{$form_name}{extra_category}} ||= [];
 			push @{$category_forms{$forms{$form_name}{extra_category}}}, $form_name;
 			$sort{$form_name} = 0;
@@ -243,7 +252,8 @@ sub form_list {
 			if (keys %param_hash) {
 				$params = "&amp;".join("&amp;", map { "$form_name\_$_=$param_hash{$_}" } keys %param_hash);
 			}
-			$output .= qq|<li><a href="?form=$form_name&amp;$form_name\_category=$category$params">$forms{$form_name}{brief}</a></li>|;
+			my $hiddenbit = $forms{$form_name}{hidden} ? ' (old)' : '';
+			$output .= qq|<li><a href="?form=$form_name&amp;$form_name\_category=$category$params">$forms{$form_name}{brief}</a>$hiddenbit</li>|;
 		}
 		if ($last_cat) {
 			$output .= "</ul>";
@@ -333,12 +343,14 @@ sub fill_values {
 			next;
 		}
 		
+		my $multi = is('multi', $info, 'admin');
+
 		# Do we have a value which was automatically supplied to the form in the
 		# first place? (If this is equal to the below, we know the user did not
 		# change the value.)
 		my $value;
 		if (defined($value = $c->param($name.'_auto_'.$param_name))) {
-			if (is('multi', $info, 'admin')) {
+			if ($multi) {
 				$info->{auto_value} = [ $c->param($name.'_auto_'.$param_name) ];
 			} else {
 				$info->{auto_value} = $value;
@@ -346,12 +358,15 @@ sub fill_values {
 		}
 
 		# Do we have a value for this param supplied by the form?
-		if (defined($value = $c->param($name.'_'.$param_name))) {
-			$value =~ s/^ +| +$//g;
-			if (!exists $info->{auto_value} || $info->{auto_value} ne $value) {
-				if (is('multi', $info, 'admin')) {
-					$info->{user_value} = [ $c->param($name.'_'.$param_name) ];
-				} else {
+		if ($multi) {
+			# TODO check if changed.
+			if (defined($c->param($name.'_'.$param_name.'_set'))) {
+				$info->{user_value} = [ $c->param($name.'_'.$param_name) ];
+			}
+		} else {
+			if (defined($value = $c->param($name.'_'.$param_name))) {
+				$value =~ s/^ +| +$//g;
+				if (!exists $info->{auto_value} || $info->{auto_value} ne $value) {
 					$info->{user_value} = $value;
 				}
 			}
@@ -373,7 +388,7 @@ sub fill_values {
 		}
 
 		$info->{value} = exists $info->{user_value} ? $info->{user_value} : $info->{auto_value};
-		$info->{value} ||= [] if is('multi',$info,'admin');
+		$info->{value} ||= [] if $multi;
 		if (my $reason = &bad_value($c, $info, \$info->{value}, $output_params_info)) {
 			$reasons{$param_name} = "Value for $param_name was invalid ($reason).";
 		}
@@ -484,9 +499,9 @@ sub fill_values {
 
 			if ($type_info->{list_default}) {
 				# Use this as the defaults.
-				if ($multi && !$info->{value} || !@{$info->{value}}) {
+				if ($multi) {
 					$info->{auto_value} = [map { $_->[0] } @value_list];
-					$info->{value} = $info->{auto_value};
+					$info->{value} = $info->{auto_value} unless exists $info->{user_value};
 				}
 			} else {
 				# Intersect the results.
@@ -663,6 +678,7 @@ sub output_form {
 				if ($multi) {
 					my $size = $info->{size} || int(@{$info->{value_list}||[]} / 2)+1;
 					$size = 3 if $size < 3;
+					$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name\_set" value="1"/>|;
 					$output .= qq|<select multiple="multiple" size="$size" name="$qname\_$qparam_name"$update_str>|;
 				} else {
 					$output .= qq|<select name="$qname\_$qparam_name"$update_str>|;

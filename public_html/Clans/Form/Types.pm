@@ -443,7 +443,7 @@ positions_team => {
 		if ($team) {
 			# TODO should be more generic
 			my $results = $c->db_select("SELECT team_seats.seat_no, members.id, members.name, members.rank FROM team_seats INNER JOIN members ON members.id = team_seats.member_id WHERE team_seats.team_id = ? ORDER BY team_seats.seat_no", {}, $team);
-			return "Team has no members." if !$results || !@$results;
+			return "Team has no seated members." if !$results || !@$results;
 			my $result = "<ul>";
 			for(@$results) {
 				$result .= "<li>".($_->[0]+1).": ".$c->render_member($_->[1], $_->[2], $_->[3])."</li>";

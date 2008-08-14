@@ -145,6 +145,11 @@ sub header {
 
 	my $period = $cgi->param('period') ? '&amp;period='.$cgi->param('period') : '';
 
+	my $myclan = '';
+	if (my $clan_id = $this->is_clan_member) {
+		$myclan .= qq{ (<a href="/index.pl?page=clan&clan=$clan_id">My clan</a>)};
+	}
+	
 	my $admin = '';
 	if (my $clan_id = $this->is_clan_moderator_noadmin) {
 		$admin .= qq{ | <a href="/admin.pl?clan_id=$clan_id">Clan Admin</a>};
@@ -152,7 +157,7 @@ sub header {
 	if ($this->is_admin) {
 		$admin .= qq{ | <a href="/admin.pl">Full Admin</a>};
 	}
-	print qq{<p class=nav><a href="index.pl?page=index$period">Summary</a> | <a href="index.pl?page=stats$period">Stats</a> | <a href="index.pl?page=help$period">Help</a> | <a href="/forum">Forum</a> | <a href="/brawl.pl?mode=overview$period">Brawl</a>$admin</p>};
+	print qq{<p class=nav><a href="index.pl?page=index$period">Summary</a>$myclan | <a href="index.pl?page=stats$period">Stats</a> | <a href="index.pl?page=help$period">Help</a> | <a href="/forum">Forum</a> | <a href="/brawl.pl?mode=overview$period">Brawl</a>$admin</p>};
 
 	print $cgi->h2($_[1]) if $_[1];
 	$this->{cgi} = $cgi;
@@ -415,14 +420,24 @@ sub is_clan_moderator_noadmin {
 
 sub is_clan_member {
 	my ($c, $clan_id) = @_;
-	my $clan_info = $c->clan_info($clan_id);
-	my $ismember;
+	my $clan_check = $clan_id ? $clan_id : 'any';
+	$c->{is} ||= {};
+	$c->{is}{member} ||= {};
+	if (exists $c->{is}{member}{$clan_check}) {
+		return $c->{is}{member}{$clan_check};
+	}
+	my $is_member;
 	if ($c->{phpbbsess}{groupids}) {
-		foreach my $groupid (@{$c->{phpbbsess}{groupids}}) {
-			$ismember = 1 if $groupid == $clan_info->{forum_group_id}; # || $groupid == 287;
+		my $groups = join(',', @{$c->{phpbbsess}{groupids}});
+		# XXX not using proper prepared statement
+		if ($clan_id) {
+			$is_member = $c->db_selectone("SELECT id FROM clans WHERE forum_group_id IN($groups) AND id = ?", {}, $clan_id);
+		} else {
+			$is_member = $c->db_selectone("SELECT id FROM clans WHERE forum_group_id IN($groups)");
 		}
 	}
-	return $ismember;
+	$c->{is}{member}{$clan_check} = $is_member;
+	return $is_member;
 }
 
 sub get_option {
