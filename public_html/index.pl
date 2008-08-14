@@ -868,6 +868,14 @@ sub main_format {
 			my $c = $_[0];
 			return ($c->{phpbbsess} ? "$c->{phpbbsess}{summary}" : "anonymous (no session)");
 		},
+		CHAMPION => sub {
+			my $champ = $c->get_option('BRAWLCHAMPION');
+			if ($champ) {
+				return $_[0]->render_clan($champ);
+			} else {
+				return "unknown";
+			}
+		},
 		CLAN => sub {
 			if ($_[0]->{clan_info}) {
 				return $_[0]->render_clan($_[0]->{clan_info}{id});

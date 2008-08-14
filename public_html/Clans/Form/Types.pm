@@ -239,6 +239,12 @@ name_kgs => {
 		}
 	},
 	list => sub { },
+	get => sub {
+		my ($c, $period, $clan, $member, $alias) = @_;
+		if ($alias) {
+			return $c->db_selectone("SELECT nick FROM kgs_usernames WHERE id = ?", {}, $alias);
+		}
+	}
 },
 id_member => {
 	defaults => {

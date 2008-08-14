@@ -2101,6 +2101,11 @@ remove_kgs_username => {
 			type => 'id_kgs($period_id,$clan_id,$member_id)',
 			brief => 'Username to remove',
 		},
+		member_alias => {
+			type => 'name_kgs($period_id,$clan_id,$member_id,$alias_id)',
+			hidden => 1,
+			informational => 1,
+		}
 	],
 	action => sub {
 		my ($c, $p) = @_;

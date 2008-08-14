@@ -62,40 +62,61 @@ my @games;
 our ($uclan, $umember, $uall) = (0, 0, undef);
 if ($mode eq 'all') {
 	$delay = $delay || 10;
-	if ($ENV{REMOTE_USER} ne 'bucko') {
-		print $c->p("Sorry, only an administrator (ie. bucko) can do that!\n");
-		print $c->footer;
+	if ($ENV{REMOTE_USER} ne 'bucko' && !$c->is_admin) {
+		print $c->p("Sorry, only an administrator can do that!\n");
+		$c->footer;
+		$c->log('update_start', 0, 'Permission denied.', { mode => 'all', period_id => $periodid, });
 		exit;
 	}
+	$c->log('update_start', 1, '', { mode => 'all', period_id => $periodid, });
 	@games = allgames();
 	$uall = 1;
 } elsif ($mode eq 'clan') {
 	$delay = $delay || 10;
-	if ($ENV{REMOTE_USER} ne 'bucko') {
-		print $c->p("Sorry, only an administrator (ie. bucko) can do that!\n");
-		print $c->footer;
+	if ($ENV{REMOTE_USER} ne 'bucko' && !$c->is_admin) {
+		print $c->p("Sorry, only an administrator can do that!\n");
+		$c->footer;
+		$c->log('update_start', 0, 'Permission denied.', { mode => 'clan', clan_id => $c->param('id'), period_id => $periodid, });
 		exit;
 	}
 	my $clan = $c->db_selectrow("SELECT id, name, regex FROM clans WHERE id = ? AND period_id = ?", {}, $c->param('id'), $periodid);
 	$uclan = $clan->[0];
 	if ($clan) {
+		$c->log('update_start', 1, '', { mode => 'clan', clan_id => $clan->[0], period_id => $periodid, });
 		@games = clangames($clan);
 	} else {
+		$c->log('update_start', 0, 'Bad input.', { mode => 'clan', clan_id => $c->param('id'), period_id => $periodid, });
 		print $c->p("Invalid clan ID: ".$c->param('id'));
 	}
 } elsif ($mode eq 'member') {
+	if (!$c->is_clan_member) {
+		print $c->p("Sorry, only clan members can do that!\n");
+		$c->footer;
+		$c->log('update_start', 0, 'Permission denied.', { mode => 'member', member_id => $c->param('id'), period_id => $periodid, });
+		exit;
+	}
 	my $member = $c->db_selectrow("SELECT members.id, members.name FROM members INNER JOIN clans ON clans.id = members.clan_id WHERE members.id = ? AND period_id = ?", {}, $c->param('id'), $periodid);
 	$umember = $member->[0];
 	if ($member) {
+		$c->log('update_start', 1, '', { mode => 'member', member_id => $member->[0], period_id => $periodid, });
 		@games = membergames($member);
 	} else {
+		$c->log('update_start', 0, '', { mode => 'member', member_id => $member->[0], period_id => $periodid, });
 		print $c->p("Invalid member ID: ".$c->param('id'));
 	}
 } elsif ($mode eq 'game') {
+	if (!$c->is_clan_member) {
+		print $c->p("Sorry, only clan members can do that!\n");
+		$c->footer;
+		$c->log('update_start', 0, 'Permission denied.', { mode => 'game', game_id => $c->param('id'), period_id => $periodid, });
+		exit;
+	}
 	my $game = $c->db_selectrow("SELECT url, time, id, white_id, black_id FROM games WHERE id = ? AND time >= ? AND time < ?", {}, $c->param('id'), $starttime, $endtime);
 	if ($game) {
+		$c->log('update_start', 1, '', { mode => 'game', game_id => $game->[2], url => $game->[0], period_id => $periodid, });
 		@games = ($game);
 	} else {
+		$c->log('update_start', 0, 'Bad input.', { mode => 'game', game_id => $c->param('id'), period_id => $periodid, });
 		print $c->p("Invalid game ID: ".$c->param('id'));
 	}
 }
@@ -107,6 +128,8 @@ print $c->p("I have ".scalar(@games)." game(s) to investigate.\n");
 foreach my $game (@games) {
 	parsegame(@$game);
 }
+
+$c->log('update_end', 1, '', {});
 
 $c->footer;
 
