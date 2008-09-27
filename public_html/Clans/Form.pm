@@ -154,9 +154,15 @@ sub no_access {
 				$message = "Operation unavailable after draw has been made";
 			}
 		} elsif ($level =~ /period_prebrawl\((\d+)\)/) {
-			my $brawl_begun = $c->db_selectone("SELECT COUNT(*) FROM brawl NATURAL JOIN team_match_players WHERE brawl.period_id = ?", {}, $1);
+			my $brawl_begun = $c->db_selectone("SELECT COUNT(*) FROM brawl INNER JOIN team_match_players ON brawl.team_match_id = team_match_players.team_match_id WHERE brawl.period_id = ?", {}, $1);
 			if ($brawl_begun) {
 				$message = "Operation unavailable after brawl has begun";
+			}
+		} elsif ($level =~ /period_prelims\((\d+)\)/) {
+			my $draw_made = $c->db_selectone("SELECT COUNT(*) FROM brawl WHERE period_id = ?", {}, $1);
+			my $brawl_begun = $c->db_selectone("SELECT COUNT(*) FROM brawl INNER JOIN team_match_players ON brawl.team_match_id = team_match_players.team_match_id WHERE brawl.period_id = ?", {}, $1);
+			if (!$draw_made || $brawl_begun) {
+				$message = "Operation unavailable after draw has been made";
 			}
 		} else {
 			$message = "This action required an unknown permission";
@@ -501,7 +507,9 @@ sub fill_values {
 					}
 				}
 				# If null is valid, we can place it in the list at the top.
-				unshift @value_list, [ "", "None" ] if $type_info->{null_valid};
+				if ($type_info->{null_valid}) {
+					unshift @value_list, [ "", "None" ];
+				}
 			}
 
 			if ($type_info->{list_default}) {

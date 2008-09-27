@@ -324,14 +324,19 @@ sub read_common_params {
 
 sub read_session {
 	my $this = $_[0];
-	my $sessid = $this->{cgi}->cookie('sessid');
+	my $override_user = $_[1];
 	return unless $this->{dbi}; # Skip bad connects
 
 	# Check PHPBB session!
 	my $phpbbsessid = $this->{cgi}->cookie('phpbb3_lyix5_sid');
-	if ($phpbbsessid) {
-		my $sessuser = $this->db_selectrow("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_sessions INNER JOIN phpbb3_users ON phpbb3_users.user_id = phpbb3_sessions.session_user_id WHERE phpbb3_sessions.session_id = ?", {}, $phpbbsessid);
-		if ($sessuser) {
+	if ($phpbbsessid || $override_user) {
+		my $sessuser;
+		if ($override_user) {
+			$sessuser = $this->db_selectrow("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_users WHERE phpbb3_users.user_id = ?", {}, $override_user);
+		} else {
+			$sessuser = $this->db_selectrow("SELECT phpbb3_users.user_id, phpbb3_users.username FROM phpbb3_sessions INNER JOIN phpbb3_users ON phpbb3_users.user_id = phpbb3_sessions.session_user_id WHERE phpbb3_sessions.session_id = ?", {}, $phpbbsessid);
+		}
+		if ($sessuser && @$sessuser) {
 			my $sessgroups = $this->db_select("SELECT phpbb3_groups.group_id, phpbb3_groups.group_name FROM phpbb3_user_group INNER JOIN phpbb3_groups ON phpbb3_user_group.group_id = phpbb3_groups.group_id WHERE phpbb3_user_group.user_id = ?", {}, $sessuser->[0]);
 			my @groupids = $sessgroups ? map { $_->[0] } @$sessgroups : ();
 			my @groupnames = $sessgroups ? map { $_->[1] } @$sessgroups : ();
@@ -448,7 +453,7 @@ sub get_option {
 
 sub log {
 	my ($this, $action, $status, $message, $params) = @_;
-	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?, time = ?", {}, $action, $status, $message, $this->{userid}, time());
+	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?, time = ?", {}, $action, $status, $message, $this->{userid}, time()) or $this->die_fatal_db('Failed to create log entry!');
 	my $id = $this->lastid;
 	for my $param_name (keys %$params) {
 		my $param_value = $params->{$param_name};

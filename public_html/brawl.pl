@@ -148,7 +148,7 @@ if ($mode eq 'brawl_overview') {
 	my $p = { period_id => $period };
 
 	# Get a list of team members.
-	my $members = $c->db_select("SELECT team_id, seat_no, member_id FROM team_seats INNER JOIN teams ON team_seats.team_id = teams.id INNER JOIN clans ON  teams.clan_id = clans.id WHERE clans.period_id = ?", {}, $p->{period_id});
+	my $members = $c->db_select("SELECT team_id, seat_no, member_id FROM team_seats INNER JOIN teams ON team_seats.team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE clans.period_id = ?", {}, $p->{period_id});
 
 	# Sort members into teams.
 	my %team_members;
@@ -174,7 +174,7 @@ if ($mode eq 'brawl_overview') {
 	$p->{max_rounds} = $c->get_option('BRAWLROUNDS', $p->{period_id});
 
 	# Get a list of teams.
-	my $teams = $c->db_select("SELECT teams.id, team_number, clans.points, COUNT(member_id) AS number, clans.id, clans.name, teams.name FROM team_members INNER JOIN teams ON team_members.team_id = teams.id INNER JOIN clans ON clans.id = teams.clan_id WHERE clans.period_id = ? GROUP BY teams.id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
+	my $teams = $c->db_select("SELECT teams.id, team_number, clans.points, COUNT(member_id) AS number, clans.id, clans.name, teams.name FROM team_members INNER JOIN teams ON team_members.team_id = teams.id INNER JOIN clans ON clans.id = teams.clan_id WHERE clans.period_id = ? AND teams.in_brawl = 1 GROUP BY teams.id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
 
 	# Remove all teams which do not have 5 members.
 	$p->{all_teams} = join ',', map { $_->[0] } @$teams;
@@ -187,6 +187,7 @@ if ($mode eq 'brawl_overview') {
 		# The winner of the last brawl is always seeded top.
 		$teams->[$_][3] = 9001 if $teams->[$_][4] == $p->{current_champion} && $teams->[$_][1] == 1;
 	}
+	@$teams = grep { $_->[3] >= 1 } @$teams;
 	@$teams = sort { $b->[3] <=> $a->[3] } @$teams;
 	$p->{sorted_teams} = join ',', map { $_->[0] } @$teams;
 

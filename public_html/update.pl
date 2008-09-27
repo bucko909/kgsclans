@@ -23,9 +23,9 @@ our ($periodid, $starttime, $endtime) = ($period_info->{id}, $period_info->{star
 our ($csec, $cmin, $chr, $cday, $cmon, $cyear) = gmtime();
 $cyear += 1900;
 
-our $reqpoints = $c->get_option('BRAWLPOINTS');
-our $reqgames = $c->get_option('BRAWLGAMES');
-our $reqpure = $c->get_option('BRAWLPURE');
+our $reqpoints = $c->get_option('BRAWLPOINTS') || 0;
+our $reqgames = $c->get_option('BRAWLGAMES') || 0;
+our $reqpure = $c->get_option('BRAWLPURE') || 0;
 
 if (!defined $reqpoints) {
 	print "Unknown number of points required...\n";
@@ -58,66 +58,81 @@ our $deftime = $starttime;
 
 my $mode = $c->param('mode') || "all";
 
+if ($ENV{REMOTE_USER} && $ENV{REMOTE_USER} eq 'system') {
+	$c->read_session(53);
+}
+
 my @games;
 our ($uclan, $umember, $uall) = (0, 0, undef);
+our $log_context = {};
 if ($mode eq 'all') {
 	$delay = $delay || 10;
-	if ($ENV{REMOTE_USER} ne 'bucko' && !$c->is_admin) {
+	$log_context = { mode => 'all', period_id => $periodid, };
+	if ($ENV{REMOTE_USER} ne 'system' && !$c->is_admin) {
 		print $c->p("Sorry, only an administrator can do that!\n");
 		$c->footer;
-		$c->log('update_start', 0, 'Permission denied.', { mode => 'all', period_id => $periodid, });
+		$c->log('update_start', 0, 'Permission denied.', $log_context);
 		exit;
 	}
-	$c->log('update_start', 1, '', { mode => 'all', period_id => $periodid, });
+	$c->log('update_start', 1, 'Update started.', $log_context);
 	@games = allgames();
 	$uall = 1;
 } elsif ($mode eq 'clan') {
 	$delay = $delay || 10;
-	if ($ENV{REMOTE_USER} ne 'bucko' && !$c->is_admin) {
+	my $clan = $c->db_selectrow("SELECT id, name, regex FROM clans WHERE id = ? AND period_id = ?", {}, $c->param('id'), $periodid) || [0, 'Unknown Clan'];
+	$log_context = { mode => 'clan', period_id => $periodid, clan_id => $c->param('id'), clan_name => $clan->[1], };
+	if ($ENV{REMOTE_USER} ne 'system' && !$c->is_admin) {
 		print $c->p("Sorry, only an administrator can do that!\n");
+		$c->log('update_start', 0, 'Permission denied.', $log_context);
 		$c->footer;
-		$c->log('update_start', 0, 'Permission denied.', { mode => 'clan', clan_id => $c->param('id'), period_id => $periodid, });
 		exit;
 	}
-	my $clan = $c->db_selectrow("SELECT id, name, regex FROM clans WHERE id = ? AND period_id = ?", {}, $c->param('id'), $periodid);
 	$uclan = $clan->[0];
-	if ($clan) {
-		$c->log('update_start', 1, '', { mode => 'clan', clan_id => $clan->[0], period_id => $periodid, });
+	if ($uclan) {
+		$c->log('update_start', 1, 'Update started.', $log_context);
 		@games = clangames($clan);
 	} else {
-		$c->log('update_start', 0, 'Bad input.', { mode => 'clan', clan_id => $c->param('id'), period_id => $periodid, });
+		$c->log('update_start', 0, 'Bad input (invalid clan ID).', $log_context);
 		print $c->p("Invalid clan ID: ".$c->param('id'));
+		$c->footer;
+		exit;
 	}
 } elsif ($mode eq 'member') {
-	if (!$c->is_clan_member) {
+	my $member = $c->db_selectrow("SELECT members.id, members.name, clans.id, clans.name FROM members INNER JOIN clans ON clans.id = members.clan_id WHERE members.id = ? AND period_id = ?", {}, $c->param('id'), $periodid) || [0, "Unknown Member"];
+	$log_context = { mode => 'member', member_id => $c->param('id'), member_name => $member->[1], clan_id => $member->[2], clan_name => $member->[3], period_id => $periodid, };
+	if (!$c->is_admin && !$c->is_clan_member) {
 		print $c->p("Sorry, only clan members can do that!\n");
+		$c->log('update_start', 0, 'Permission denied.', $log_context);
 		$c->footer;
-		$c->log('update_start', 0, 'Permission denied.', { mode => 'member', member_id => $c->param('id'), period_id => $periodid, });
 		exit;
 	}
-	my $member = $c->db_selectrow("SELECT members.id, members.name FROM members INNER JOIN clans ON clans.id = members.clan_id WHERE members.id = ? AND period_id = ?", {}, $c->param('id'), $periodid);
 	$umember = $member->[0];
-	if ($member) {
-		$c->log('update_start', 1, '', { mode => 'member', member_id => $member->[0], period_id => $periodid, });
+	if ($umember) {
+		$c->log('update_start', 1, 'Update started.', $log_context);
 		@games = membergames($member);
 	} else {
-		$c->log('update_start', 0, '', { mode => 'member', member_id => $member->[0], period_id => $periodid, });
+		$c->log('update_start', 0, 'Bad input (invalid member ID).', $log_context);
 		print $c->p("Invalid member ID: ".$c->param('id'));
-	}
-} elsif ($mode eq 'game') {
-	if (!$c->is_clan_member) {
-		print $c->p("Sorry, only clan members can do that!\n");
 		$c->footer;
-		$c->log('update_start', 0, 'Permission denied.', { mode => 'game', game_id => $c->param('id'), period_id => $periodid, });
 		exit;
 	}
+} elsif ($mode eq 'game') {
 	my $game = $c->db_selectrow("SELECT url, time, id, white_id, black_id FROM games WHERE id = ? AND time >= ? AND time < ?", {}, $c->param('id'), $starttime, $endtime);
+	$log_context = { mode => 'game', game_id => $c->param('id'), game_url => ($game ? $game->[0] : "Unknown game"), period_id => $periodid, };
+	if (!$c->is_admin && !$c->is_clan_member) {
+		print $c->p("Sorry, only clan members can do that!\n");
+		$c->log('update_start', 0, 'Permission denied.', $log_context);
+		$c->footer;
+		exit;
+	}
 	if ($game) {
-		$c->log('update_start', 1, '', { mode => 'game', game_id => $game->[2], url => $game->[0], period_id => $periodid, });
+		$c->log('update_start', 1, 'Update started.', $log_context);
 		@games = ($game);
 	} else {
-		$c->log('update_start', 0, 'Bad input.', { mode => 'game', game_id => $c->param('id'), period_id => $periodid, });
+		$c->log('update_start', 0, 'Bad input (invalid game ID).', $log_context);
 		print $c->p("Invalid game ID: ".$c->param('id'));
+		$c->footer;
+		exit;
 	}
 }
 
@@ -129,7 +144,7 @@ foreach my $game (@games) {
 	parsegame(@$game);
 }
 
-$c->log('update_end', 1, '', {});
+$c->log('update_end', 1, 'Update successful.', $log_context);
 
 $c->footer;
 
@@ -186,7 +201,7 @@ sub aliasgames {
 
 	# Has the user been updated recently?
 	my $time = $alias->[2] || $deftime;
-	if (time() - ($alias->[3] || 0) < 3600 && $ENV{REMOTE_USER} ne 'bucko') {
+	if (time() - ($alias->[3] || 0) < 3600 && $ENV{REMOTE_USER} ne 'system') {
 		print $c->p("Alias $alias->[1] was updated too recently; skipping.\n");
 		return;
 	}

@@ -258,7 +258,7 @@ brawl_draw => {
 			$p->{max_rounds} = $c->get_option('BRAWLROUNDS', $p->{period_id});
 
 			# Get a list of teams.
-			my $teams = $c->db_select("SELECT teams.id, team_number, clans.points, COUNT(member_id) AS number, clans.id FROM team_members INNER JOIN teams ON team_members.team_id = teams.id INNER JOIN clans ON clans.id = teams.clan_id WHERE clans.period_id = ? GROUP BY teams.id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
+			my $teams = $c->db_select("SELECT teams.id, team_number, clans.points, COUNT(member_id) AS number, clans.id FROM team_members INNER JOIN teams ON team_members.team_id = teams.id INNER JOIN clans ON clans.id = teams.clan_id WHERE clans.period_id = ? AND teams.in_brawl = 1 GROUP BY teams.id HAVING number >= ?", {}, $p->{period_id}, $p->{req_members});
 
 			# Remove all teams which do not have 5 members.
 			$p->{all_teams} = join ',', map { $_->[0] } @$teams;
@@ -446,7 +446,7 @@ brawl_draw => {
 					$games[int($_/2)][$_%2] ||= $positions[$_];
 				}
 				for (0..$#games) {
-					my $match = $insert_match->(1, $_, $games[$_][0], $games[$_][1], undef);
+					my $match = $insert_match->($games[$_][0], $games[$_][1], undef);
 					$c->db_do("INSERT INTO brawl SET period_id = ?, round = 1, position = ?, team_match_id = ?", {}, $p->{period_id}, $_, $match);
 					push @matches, [ $match, $_ ];
 				}
@@ -593,7 +593,7 @@ add_clan => {
 		}
 
 		# Hopefully the next line should fix issues with the index not updating.
-		# TODO check.
+		# TODO it doesn't.
 		unlink("forum/cache/sql_e4646055f69bcd0cb7ef3bbff697ee0c.php");
 
 		return (1, "Clan and forum added.");
@@ -632,6 +632,32 @@ add_page => {
 			return (0, "Database error.");
 		}
 		return (1, "Page created.");
+	}
+},
+change_log_format => {
+	brief => 'Change log format',
+	checks => 'admin',
+	categories => [ qw/admin/ ],
+	override_category => 'period',
+	params => [
+		period_id => {
+			type => 'id_period',
+			hidden => 1,
+		},
+		action_name => {
+			type => 'name_action()',
+		},
+		action_format => {
+			type => 'format_action($action_name)',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		if ($c->db_do("REPLACE INTO log_formats SET action = ?, format = ?", {}, $p->{action_name}, $p->{action_format})) {
+			return (1, "Successfully changed format.");
+		} else {
+			return (0, "Database error.");
+		}
 	}
 },
 change_page => {
@@ -1038,6 +1064,57 @@ add_team_game => {
 			return (1, "Added game and inferred final result");
 		}
 		return (1, "Added game");
+	},
+},
+change_clan_points => {
+	brief => 'Change clan points',
+	repeatable => 1,
+	checks => 'admin',
+	categories => [ qw/member clan admin/ ],
+	acts_on => 'clan',
+	description => 'Here you can give point bonusses or penalties to clans who have behaved/misbehaved.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		member_id => {
+			type => 'null_valid|id_member($period_id,$clan_id)',
+			brief => 'Member, if any, to get credit',
+		},
+		member_name => {
+			type => 'null_valid|name_member($period_id,$clan_id,$member_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		change_type => {
+			type => 'enum(bonus,penalty)',
+			brief => 'Change type',
+		},
+		change_value => {
+			type => 'int_positive',
+			brief => 'Change amount',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+
+		if ($p->{change_type} eq 'bonus') {
+			$p->{change} = $p->{change_value};
+		} else {
+			$p->{change} = -$p->{change_value};
+		}
+
+		$c->db_do("UPDATE clans SET points = points + ? WHERE id = ?", {}, $p->{change}, $p->{clan_id}) or return (0, "Database error.");
+
+		return (1, "Points altered.");
 	},
 },
 add_member => {
@@ -1629,7 +1706,7 @@ remove_member_from_team => {
 },
 change_team_members => {
 	brief => 'Select team members',
-	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
+	checks => 'clan_moderator($clan_id)|period_predraw($period_id)',
 	categories => [ qw/team clan admin/ ],
 	acts_on => 'team',
 	next_form => 'change_team_seats',
@@ -1697,9 +1774,8 @@ change_team_members => {
 },
 add_member_to_team => {
 	brief => 'Add member to team',
-	hidden => 1,
 	repeatable => 1,
-	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
+	checks => 'clan_moderator($clan_id)|period_prelims($period_id)',
 	categories => [ qw/team member clan admin/ ],
 	acts_on => 'team',
 	description => 'Here you can add members to a team.',
@@ -1920,6 +1996,46 @@ change_team_seat => {
 			return (0, "Database error.");
 		} else {
 			return (1, "Changed member's team position.");
+		}
+	},
+},
+set_brawl_ready_status => {
+	brief => 'Set team ready status',
+	repeatable => 1,
+	checks => 'clan_moderator($clan_id)|period_prebrawl($period_id)',
+	categories => [ qw/team member clan admin/ ],
+	acts_on => 'team',
+	description => 'If you want your team to participate in the brawl, you must set the team "ready" below.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id,$clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		team_id => {
+			type => 'id_team($period_id,$clan_id)',
+		},
+		team_name => {
+			type => 'name_team($period_id,$clan_id,$team_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		ready_status => {
+			type => 'ready_team($period_id,$clan_id,$team_id)',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		if (!$c->db_do('UPDATE teams SET in_brawl=? WHERE id = ?', {}, $p->{ready_status}, $p->{team_id})) {
+			return (0, "Database error.");
+		} else {
+			return (1, "Set ready status.");
 		}
 	},
 },

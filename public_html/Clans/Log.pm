@@ -49,10 +49,11 @@ sub get_log_line {
 }
 
 sub get_log_lines {
-	my ($c, $pname, $pvalue, $start, $count) = @_;
+	my ($c, $pname, $pvalue, $start, $count, $show_failures) = @_;
 	$start ||= 0;
 	$count ||= 200;
-	my $result = $c->db_select("SELECT log.id, action, status, message, log.user_id, username, time FROM log INNER JOIN phpbb3_users ON phpbb3_users.user_id = log.user_id INNER JOIN log_params ON log.id = log_params.log_id WHERE log_params.param_name = ? AND log_params.param_value = ? ORDER BY time DESC LIMIT ?, ?", {}, $pname, $pvalue, $start, $count);
+	my $failure_filter = $show_failures ? "" : " AND status = 1";
+	my $result = $c->db_select("SELECT log.id, action, status, message, log.user_id, username, time FROM log INNER JOIN phpbb3_users ON phpbb3_users.user_id = log.user_id INNER JOIN log_params ON log.id = log_params.log_id WHERE log_params.param_name = ? AND log_params.param_value = ?$failure_filter ORDER BY time DESC LIMIT ?, ?", {}, $pname, $pvalue, $start, $count);
 	my %indices;
 	for (0..$#$result) {
 		$indices{$result->[$_][0]} = $_;
@@ -87,6 +88,8 @@ sub format_log_lines {
 			$output .= 'Member';
 		} elsif ($_ eq 'team') {
 			$output .= 'Team';
+		} elsif ($_ eq 'status') {
+			$output .= 'Status';
 		}
 		$output .= qq|</th>|;
 	}
@@ -103,17 +106,23 @@ sub format_log_lines {
 				$output .= $line->[7]{period_id} || '';
 			} elsif ($_ eq 'clan') {
 				#$output .= $line->[7]{clan_id} && $format !~ /\%clan/ ? $c->render_clan($line->[7]{clan_id}, $line->[7]{clan_name}) : '';
-				$output .= $line->[7]{clan_id} && $format !~ /\%clan/ ? $line->[7]{clan_name} : '';
+				$output .= $line->[7]{clan_id} && $format !~ /\%clan/ ? $line->[7]{clan_name} || $line->[7]{newname} || '???' : '';
 			} elsif ($_ eq 'member') {
 				#$output .= $line->[7]{member_id} && $format !~ /\%member/ ? $c->render_member($line->[7]{member_id}, $line->[7]{member_name}) : '';
-				$output .= $line->[7]{member_id} && $format !~ /\%member/ ? $line->[7]{member_name} : '';
+				$output .= $line->[7]{member_id} && $format !~ /\%member/ ? $line->[7]{member_name} || $line->[7]{newname} || '???' : '';
 			} elsif ($_ eq 'team') {
-				$output .= $line->[7]{team_id} && $format !~ /\%team/ ? $line->[7]{team_name} : '';
+				$output .= $line->[7]{team_id} && $format !~ /\%team/ ? $line->[7]{team_name} || $line->[7]{newname} || '???' : '';
+			} elsif ($_ eq 'status') {
+				if ($line->[2]) {
+					$output .= "Success";
+				} else {
+					$output .= "Failure";
+				}
 			}
 			$output .= qq|</td>|;
 		}
 		# Remove [ %var% ] if var is not set.
-		$format =~ s/\[.*?%(.*?)%.*?\]/$line->[7]{$2}?$&:''/eg;
+		$format =~ s/\[(.*?%(.*?)%.*?)\]/$line->[7]{$2}?$1:''/eg;
 
 		# Expand vars.
 		$format =~ s/%(.*?)%/$line->[7]{$1}||"NULL"/eg;

@@ -405,6 +405,25 @@ id_team => {
 		$c->db_select("SELECT clans.period_id, clans.id FROM teams INNER JOIN clans ON teams.clan_id = clans.id WHERE teams.id = ?", {}, $_);
 	},
 },
+ready_team => {
+	# "0.0" used instead of 0 because it == 0 and is also true.
+	defaults => {
+		brief => 'Team name',
+	},
+	check => sub {
+		/^[a-zA-Z0-9 ,.-]+$/
+	},
+	exists => undef,
+	list => sub {
+		return [ [ 1, 'Ready' ], [ '0.0', 'Not ready' ] ];
+	},
+	get => sub {
+		my ($c, $period, $clan, $teamid) = @_;
+		if ($teamid) {
+			return $c->db_selectone("SELECT IF(teams.in_brawl,1,'0.0') FROM teams WHERE teams.id = ?", {}, $teamid);
+		}
+	},
+},
 name_team => {
 	defaults => {
 		brief => 'Team name',
@@ -488,6 +507,35 @@ text => {
 	exists => undef,
 #	list => sub { },
 },
+name_action => {
+	defaults => {
+		brief => 'Action name',
+	},
+	exists => sub {
+		my ($c) = @_;
+		return $c->db_selectone("SELECT action FROM log WHERE action = ? LIMIT 1", {}, $_);
+	},
+	list => sub {
+		my ($c) = @_;
+		return $c->db_select("SELECT DISTINCT action, action FROM log ORDER BY action");
+	},
+},
+format_action => {
+	defaults => {
+		brief => 'Log format',
+	},
+	check => sub {
+		/^[a-zA-Z0-9 ',.\%_\]\[\{\}\-]+$/
+	},
+	exists => undef,
+#	list => sub {}
+	get => sub {
+		my ($c, $action) = @_;
+		if ($action) {
+			return $c->db_selectone("SELECT format FROM log_formats WHERE action = ?", {}, $action);
+		}
+	},
+},
 id_period => {
 	defaults => {
 		brief => 'Clan period',
@@ -532,6 +580,12 @@ id_forum => {
 		my ($c) = @_;
 		return [ sort { lc $a->[1] cmp lc $b->[1] } @{$c->db_select("SELECT user_id, username FROM phpbb3_users ORDER BY username")} ];
 	},
+},
+int_positive => {
+	check => sub {
+		/^[0-9]+$/
+	},
+	exists => undef,
 },
 boolean => {
 	defaults => {

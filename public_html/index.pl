@@ -87,7 +87,7 @@ BEGIN {
 			data => sub { $_[0] },
 		},
 		cr => { # clan_recruiting => {
-			sqlcols => [ qw/SUBSTRING_INDEX(clans.looking,'\n',1)/ ],
+			sqlcols => [ "SUBSTRING_INDEX(clans.looking,'\n',1)" ],
 			title => "Description",
 			data => sub { $_[0] || "" },
 		},
@@ -713,7 +713,7 @@ sub clan_teamlist {
 		}
 	}
 	my $mod_of = $c->is_clan_moderator;
-	my $teams = $c->db_select("SELECT teams.id, name, team_number, COUNT(member_id) FROM teams LEFT OUTER JOIN team_seats ON teams.id = team_seats.team_id AND seat_no >= 0 AND seat_no <= 4 WHERE clan_id = ? GROUP BY teams.id ORDER BY team_number", {}, $clanid);
+	my $teams = $c->db_select("SELECT teams.id, name, team_number, COUNT(member_id), teams.in_brawl FROM teams LEFT OUTER JOIN team_seats ON teams.id = team_seats.team_id AND seat_no >= 0 AND seat_no <= 4 WHERE clan_id = ? GROUP BY teams.id ORDER BY team_number", {}, $clanid);
 	my $out = '<h3>Teams</h3>';
 	if ($mod_of && $mod_of != $clanid && @$teams) {
 		$out .= qq|<p><a href="admin.pl?form=add_challenge&amp;add_challenge_category=clan&amp;add_challenge_cclan_id=$clanid">Challenge this clan to a match</a>.</p>|;
@@ -732,10 +732,12 @@ sub clan_teamlist {
 			$out .= "<h4>Team $count: ";
 			$count++;
 			$out .= $_->[1] ? $_->[1] : "Main";
-			if ($_->[3] == 5) {
-				$out .= " (ready for matches)";
-			} else {
+			if ($_->[3] != 5) {
 				$out .= " (some seats unallocated)";
+			} elsif (!$_->[4]) {
+				$out .= " (team not marked as ready)";
+			} else {
+				$out .= " (ready for matches)";
 			}
 			$out .= "</h4>";
 			if ($c->is_clan_member($clanid)) {
