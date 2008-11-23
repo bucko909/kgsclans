@@ -1,4 +1,4 @@
-mysql -se 'SELECT time, IF(black_id IS NOT NULL,1,0)+IF(white_id IS NOT NULL,1,0) AS clanfactor FROM games WHERE time > 1196532000 HAVING clanfactor > -1'| \
+mysql -se 'SELECT time, IF(black_id IS NOT NULL,1,0)+IF(white_id IS NOT NULL,1,0) AS clanfactor FROM games WHERE time > 1216813497 HAVING clanfactor > -1'| \
 perl -MPOSIX -ne '
 	($a,$b)=split /\s+/;
 	print strftime("%u %H:%M $b $c\n", gmtime $a)'| \
@@ -9,7 +9,7 @@ perl -ne '
 		$length = 3;
 		$gamelength = 30;
 		$height = 1;
-		$mult = 1;
+		$mult = 3;
 		$font = 7;
 		$number = 60 / $length;
 		$total = 24 * $number;

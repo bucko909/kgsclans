@@ -11,7 +11,7 @@ $SIG{__DIE__} = sub { no warnings; undef $SIG{__DIE__}; confess $_[0] };
 $SIG{__WARN__} = sub { local $SIG{__WARN__}; Carp::cluck $_[0]};
 
 our $c = Clans->new;
-$c->{userid} = 53; # Clan System
+$c->read_session(53); # Clan System
 
 our $post_time = time();
 
@@ -25,8 +25,6 @@ $t[2] = 0;
 our $end_time = timegm(@t);
 our $start_time = $end_time - 60*60*24*7;
 our $match_too_old_time = $start_time - 60*60*24*7;
-print strftime("%m/%d %H:%M", gmtime $match_too_old_time)."\n";
-print strftime("%m/%d %H:%M", gmtime $now_time)."\n";
 
 # Get forum activity. This needs to be done bang on midnight.
 our $period_info = $c->period_info();
@@ -102,7 +100,7 @@ sub forum_activity {
 
 # Find inactive new members
 sub inactive_new_members {
-	my ($clan_id) = @_;
+	my ($clan_id, $clan_name) = @_;
 	# Inactive for one week; give warning
 	my $warn = $c->db_select("SELECT members.id, members.name, members.rank, MAX(activity) AS maxactivity FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id WHERE members.played = 0 AND members.clan_id = ? GROUP BY members.id HAVING maxactivity >= ? AND maxactivity < ?;", {}, $clan_id, $end_time - 60*60*24*7*2, $end_time - 60*60*24*7*1);
 	# Inactive for two weeks or more; delete
@@ -170,7 +168,7 @@ sub match_summary {
 	my $challenges_too_old = $c->db_select("SELECT challenges.id, teams.name, clans.id, clans.name FROM challenges INNER JOIN teams ON challenger_team_id = teams.id INNER JOIN clans ON teams.clan_id = clans.id WHERE challenged_clan_id = ? AND challenge_date < ?", {}, $clan_id, $match_too_old_time);
 
 	# Gets all unannounced matches. Calculates the winner in the SQL...
-	my $match_results = $c->db_select("SELECT m.id, t1.name, t2.name, c2.id, c2.name, mt1.team_no, IF(SUM(s.winner=1)>SUM(s.winner=2),1,IF(SUM(s.winner=1)<SUM(s.winner=2),2,IF(MIN(s.seat_no+s.winner*0.5)%1=0.5,1,2))), m.winner, SUM(IF(s.winner IS NOT NULL,1,0)), start_date FROM team_matches m INNER JOIN team_match_seats s ON m.id = s.team_match_id LEFT OUTER JOIN brawl_prelim bp ON bp.team_match_id = m.id LEFT OUTER JOIN brawl b ON b.team_match_id = m.id INNER JOIN team_match_teams mt1 ON mt1.team_match_id = m.id INNER JOIN team_match_teams mt2 ON mt2.team_match_id = m.id AND mt2.team_id != mt1.team_id INNER JOIN teams t1 ON t1.id = mt1.team_id INNER JOIN teams t2 ON t2.id = mt2.team_id INNER JOIN clans c2 ON c2.id = t2.clan_id WHERE b.round IS NULL AND bp.for_position IS NULL AND t1.clan_id = ? GROUP BY m.id", {}, $clan_id);
+	my $match_results = $c->db_select("SELECT m.id, t1.name, t2.name, c2.id, c2.name, mt1.team_no, IF(SUM(s.winner=1)>SUM(s.winner=2),1,IF(SUM(s.winner=1)<SUM(s.winner=2),2,IF(MIN(s.seat_no+s.winner*0.5)%1=0.5,1,2))), m.winner, SUM(IF(s.winner IS NOT NULL,1,0)), start_date FROM team_matches m INNER JOIN team_match_seats s ON m.id = s.team_match_id LEFT OUTER JOIN brawl_prelim bp ON bp.team_match_id = m.id LEFT OUTER JOIN brawl b ON b.team_match_id = m.id INNER JOIN team_match_teams mt1 ON mt1.team_match_id = m.id INNER JOIN team_match_teams mt2 ON mt2.team_match_id = m.id AND mt2.team_id != mt1.team_id INNER JOIN teams t1 ON t1.id = mt1.team_id INNER JOIN teams t2 ON t2.id = mt2.team_id INNER JOIN clans c2 ON c2.id = t2.clan_id WHERE b.round IS NULL AND bp.for_position IS NULL AND t1.clan_id = ? AND result_announced = 0 GROUP BY m.id", {}, $clan_id);
 	# Saves using a HAVING. Pull out only expired or otherwise finished matches.
 	@$match_results = grep { $_->[8] == 5 || $_->[9] < $match_too_old_time } @$match_results;
 
