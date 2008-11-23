@@ -1632,7 +1632,7 @@ remove_team => {
 		if ($p->{challenge_id}) {
 			return (0, "Sorry, your team has sent a challenge to another clan. The team can't be removed while the challenge exists.");
 		} elsif ($p->{match_id}) {
-			return (0, "Sorry, but you cannot remove a team which has played or is playing a match.");
+			return (0, "Sorry, you cannot remove a team which has played or is playing a match.");
 		}
 		# Splat members and stuff first.
 		$c->db_do('DELETE FROM team_seats WHERE team_id=?', {}, $p->{team_id}) or return (0, "Database error removing seats.");
