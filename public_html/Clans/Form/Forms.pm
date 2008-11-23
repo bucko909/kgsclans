@@ -1627,8 +1627,8 @@ remove_team => {
 	],
 	action => sub {
 		my ($c, $p) = @_;
-		$p->{challenge_id} = $c->db_selectone("SELECT id FROM challenges WHERE challenger_team_id = ?", {}, $p->{team_id});
-		$p->{match_id} = $c->db_selectone("SELECT id FROM team_match_teams WHERE team_id = ?", {}, $p->{team_id});
+		$p->{challenge_id} = $c->db_selectone("SELECT challenger_team_id FROM challenges WHERE challenger_team_id = ?", {}, $p->{team_id});
+		$p->{match_id} = $c->db_selectone("SELECT team_id FROM team_match_teams WHERE team_id = ?", {}, $p->{team_id});
 		if ($p->{challenge_id}) {
 			return (0, "Sorry, your team has sent a challenge to another clan. The team can't be removed while the challenge exists.");
 		} elsif ($p->{match_id}) {

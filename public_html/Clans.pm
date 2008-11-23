@@ -412,7 +412,6 @@ sub is_clan_moderator_noadmin {
 	my $is_moderator;
 	if ($c->{phpbbsess}{groupids}) {
 		my $groups = join(',', @{$c->{phpbbsess}{groupids}});
-		print STDERR "GROUPS: $clan_id / $groups\n";
 		# XXX not using proper prepared statement
 		if ($clan_id) {
 			$is_moderator = $c->db_selectone("SELECT id FROM clans WHERE forum_leader_group_id IN($groups) AND id = ?", {}, $clan_id);
