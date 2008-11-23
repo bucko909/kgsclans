@@ -887,7 +887,7 @@ sub main_format {
 		},
 		CLANINFO => sub {
 			if ($_[0]->{clan_info}) {
-				my $inf = $_[0]->db_selectone("SELECT looking FROM clans WHERE id = ?", {}, $_[0]->{clan_info}{id});
+				my $inf = $_[0]->db_selectone("SELECT looking FROM clans WHERE id = ?", {}, $_[0]->{clan_info}{id}) || '';
 				$inf =~ s/^.*?\n//;
 				my $textile = Text::Textile->new();
 				$inf = $textile->process($inf);

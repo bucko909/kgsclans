@@ -57,6 +57,7 @@ add_period => {
 		if (!$c->db_do("SET \@old_period = ?, \@now_time = ?", {}, $p->{old_period_id}, $p->{time})) {
 			return (0, "Database error during forum add. Get bucko to fix this; changes were not rolled back!");
 		}
+		# updateall.pl etc. still have hardcoded periods.
 		my @SQL = (
 			'SELECT @new_period := MAX(id) + 1 FROM clanperiods',
 			'INSERT INTO content (name, period_id, revision, content, creator, created, current) SELECT name, @new_period, 1, content, creator, created, 1 FROM content WHERE period_id = @old_period AND current = 1;',
@@ -65,7 +66,8 @@ add_period => {
 			'INSERT INTO kgs_usernames (member_id, nick, rank, period_id, activity) SELECT m2.id, kgs_usernames.nick, kgs_usernames.rank, @new_period, @now_time FROM kgs_usernames INNER JOIN members m1 ON kgs_usernames.member_id = m1.id INNER JOIN clans c1 ON m1.clan_id = c1.id AND c1.period_id = @old_period INNER JOIN clans c2 ON c1. tag = c2.tag AND c2.period_id = @new_period INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id;',
 			'UPDATE clans c2 INNER JOIN clans c1 ON c1.period_id = @old_period AND c1.tag = c2.tag INNER JOIN members m1 ON m1.id = c1.leader_id INNER JOIN members m2 ON m2.name = m1.name AND m2.clan_id = c2.id SET c2.leader_id = m2.id WHERE c2.period_id = @new_period;',
 			'INSERT INTO options (name, period_id, value) SELECT name, @new_period, value FROM options WHERE period_id = @old_period;',
-			'INSERT INTO clanperiods (id, startdate, enddate) VALUES (@new_period, @now_time, @now_time + 24*3600*7*13);'
+			'INSERT INTO clanperiods (id, startdate, enddate) VALUES (@new_period, @now_time, @now_time + 24*3600*7*13);',
+			'UPDATE clans SET forum_group_id = NULL, forum_leader_group_id = NULL WHERE period_id = @old_period;',
 		);
 		foreach my $SQL (@SQL) {
 			if (!$c->db_do($SQL)) {
@@ -170,7 +172,7 @@ brawl_draw => {
 		# - Asked to produce any other round.
 
 		# First, let's see if this will be the first draw of any kind.
-		my $draw_made = $c->db_selectone("SELECT brawl.team_match_id FROM brawl WHERE brawl.period_id = ?", {}, $p->{period_id});
+		$p->{draw_made} = $c->db_selectone("SELECT brawl.team_match_id FROM brawl WHERE brawl.period_id = ?", {}, $p->{period_id});
 
 		# Helper routine
 		my $insert_match = sub {

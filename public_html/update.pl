@@ -18,7 +18,7 @@ our ($lwp_response, $page_fail);
 
 $|=1; # Turn off output buffering.
 
-my $period_info = $c->period_info;
+my $period_info = $c->period_info();
 our ($periodid, $starttime, $endtime) = ($period_info->{id}, $period_info->{startdate}, $period_info->{enddate});
 our ($csec, $cmin, $chr, $cday, $cmon, $cyear) = gmtime();
 $cyear += 1900;
