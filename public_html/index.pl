@@ -12,6 +12,13 @@ my $c = Clans->new;
 
 $c->header;
 
+if ($c->param('cols') || $c->param('sort')) {
+	print $c->h1("Error.");
+	print $c->p("Sorry, the table code is disabled due to excessive web spidering causing errors.\n");
+	$c->footer;
+	exit 0;
+}
+
 my $pagename = $c->param("page");
 $pagename = "index" unless $pagename && $pagename =~ /^\w+$/;
 my $qstring = "page=$pagename";

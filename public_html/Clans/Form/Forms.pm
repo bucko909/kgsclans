@@ -79,6 +79,94 @@ add_period => {
 		return (1, 'Successfully added the clan period. Some clans may be tagged "to delete" and must be manually funged for now.');
 	}
 },
+send_message => {
+	brief => 'Send a message to members on the system',
+	checks => 'admin',
+	categories => [ qw/admin/ ],
+	acts_on => 'period',
+	description => 'Send messages to KGS users.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		alias_id => {
+			type => 'id_kgs($period_id)',
+			multi => 1,
+			brief => 'New team member list',
+			description => 'You can hold Ctrl to select multiple members',
+		},
+		message_content => {
+			type => 'text',
+			input_type => 'textarea',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		$p->{alias_name} = [];
+		for(@{$p->{alias_id}}) {
+			my $alias_name = $c->db_selectone("SELECT nick FROM kgs_usernames WHERE id = ?", {}, $_);
+			push @{$p->{alias_name}}, $alias_name;
+			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $alias_name, $p->{message_content}) or return (0, "Failed to send.\n");
+		}
+		if (!fork()) {
+			system("/home/kgs/scripts/message_send_wrapper.sh");
+			exit 0
+		}
+		return (1, "OK, message(s) queued to be sent.");
+	},
+},
+send_message_group => {
+	brief => 'Send a message to a group of people',
+	checks => 'admin',
+	categories => [ qw/admin/ ],
+	acts_on => 'period',
+	description => 'Send messages to KGS users by group (clan leaders, clan leaders for clans involved in the brawl, clan leaders for clans involved in the preliminary round, clan leaders for clans in the brawl and not in the preliminaries).',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		recepients => {
+			type => 'enum(All Clan Leaders,Brawl Clan Leaders,Prelim Clan Leaders,Nonprelim Brawl Clan Leaders)',
+		},
+		message_content => {
+			type => 'text',
+			input_type => 'textarea',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		if ($p->{recepients} =~ /^All/) {
+			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id WHERE clans.period_id = ? AND clans.points >= 0 GROUP BY members.id";
+		} elsif ($p->{recepients} =~ /^Brawl/) {
+			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl ON brawl.team_match_id = team_match_teams.team_match_id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? AND (brawl.period_id IS NOT NULL OR brawl_prelim.period_id IS NOT NULL) GROUP BY members.id";
+		} elsif ($p->{recepients} =~ /^Prelim/) {
+			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? brawl_prelim.period_id IS NOT NULL GROUP BY members.id";
+		} else {
+			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ','), MAX(brawl.period_id), MAX(brawl_prelim.period_id) FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl ON brawl.team_match_id = team_match_teams.team_match_id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? GROUP BY members.id";
+		}
+		my $results = $c->db_select($p->{SQL}, {}, $p->{period_id});
+		return (0, "Problem getting list of members") unless $results;
+		$p->{alias_name} = [];
+		for(@$results) {
+			if (@$_ > 2) {
+				next if !$_->[2] || $_->[3];
+			}
+			my $name = lc $_->[0];
+			my @nicks = split /,/, lc $_->[1];
+			my $nick;
+			if (grep { $name eq $_ } @nicks) {
+				$nick = $name;
+			} else {
+				@nicks = sort @nicks;
+				$nick = $nicks[0];
+			}
+			push @{$p->{alias_name}}, $nick;
+			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $nick, $p->{message_content}) or return (0, "Failed to send.\n");
+		}
+		system("/home/kgs/scripts/message_send_wrapper.sh");
+		return (1, "OK, message(s) queued to be sent.");
+	},
+},
 remove_clan => {
 	brief => 'Remove an entire clan',
 	checks => 'admin',
@@ -972,7 +1060,7 @@ add_team_game => {
 				$p->{badrules} = 'maintime';
 			} elsif (!$p->{overtime}
 				|| ($p->{overtime} =~ m[(\d+)/(\d+) Canadian] && ($2 < 300 || $1 > 30))
-				|| ($p->{overtime} =~ m[(\d+)x(\d+) byo-yomi] && ($1 < 5 || $2 < 20))
+				|| ($p->{overtime} =~ m[(\d+)x(\d+) byo-yomi] && ($1 < 3 || $2 < 20))
 				|| ($p->{overtime} !~ m[(\d+)/(\d+) Canadian] && $p->{overtime} !~ m[(\d+)x(\d+) byo-yomi])) {
 				$p->{badrules} = 'overtime';
 			} elsif (!$p->{komi} || $p->{komi} != 6.5) {

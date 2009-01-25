@@ -453,7 +453,7 @@ sub get_option {
 
 sub log {
 	my ($this, $action, $status, $message, $params) = @_;
-	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?, time = ?", {}, $action, $status, $message, $this->{userid}, time()) or $this->die_fatal_db('Failed to create log entry!');
+	$this->db_do("INSERT INTO log SET action = ?, status = ?, message = ?, user_id = ?, time = ?", {}, $action, $status, $message, $this->{userid} || 1, time()) or $this->die_fatal_db('Failed to create log entry!');
 	my $id = $this->lastid;
 	for my $param_name (keys %$params) {
 		my $param_value = $params->{$param_name};

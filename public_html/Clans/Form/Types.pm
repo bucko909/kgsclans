@@ -111,7 +111,7 @@ id_clan => {
 },
 name_clan => {
 	check => sub {
-		/^[a-zA-Z0-9!\[\] ]+$/
+		/^[a-zA-Z0-9'!\[\] ]+$/
 	},
 	exists => sub {
 		my ($c, $period, $clan_id) = @_;
@@ -210,6 +210,8 @@ id_kgs => {
 		my ($c, $period, $clan_id, $member_id) = @_;
 		if ($member_id) {
 			return $c->db_select("SELECT id, nick FROM kgs_usernames WHERE member_id = ? ORDER BY nick", {}, $member_id);
+		} elsif ($period) {
+			return [sort { lc($a->[1]) cmp lc($b->[1]) } @{$c->db_select("SELECT id, nick FROM kgs_usernames WHERE period_id = ?", {}, $period)}];
 		}
 		return;
 	},
@@ -330,7 +332,7 @@ rank_member => {
 		brief => 'Rank',
 	},
 	check => sub {
-		/^[a-zA-Z0-9 ,.-]*%?[a-zA-Z0-9 ,.-]*$/
+		/^[a-zA-Z0-9 ,'.-]*%?[a-zA-Z0-9 ,'.-]*$/
 	},
 	exists => undef,
 	get => sub {
@@ -502,7 +504,7 @@ enum => {
 },
 text => {
 	check => sub {
-		/^[a-zA-Z0-9,:\[\]\\\/\-.><]+$/
+		/^[a-zA-Z0-9,.:\[\]\\\/\->< \(\)'";!\r]+$/
 	},
 	exists => undef,
 #	list => sub { },

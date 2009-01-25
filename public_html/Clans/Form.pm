@@ -693,6 +693,7 @@ sub output_form {
 				if ($multi) {
 					my $size = $info->{size} || int(@{$info->{value_list}||[]} / 2)+1;
 					$size = 3 if $size < 3;
+					$size = 10 if $size > 10;
 					$hidden_output .= qq|<input type="hidden" name="$qname\_$qparam_name\_set" value="1"/>|;
 					$output .= qq|<select multiple="multiple" size="$size" name="$qname\_$qparam_name"$update_str>|;
 				} else {
