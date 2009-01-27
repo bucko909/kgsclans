@@ -785,9 +785,18 @@ if (!empty($topic_data['poll_start']))
 				$voted_for_bucko_str = join(' and ', $voted_for_bucko);
 			}
 			$template->assign_vars(array(
-				'VOTED_FOR'	=> $voted_for_bucko_str,
+				'VOTED_FOR' => $voted_for_bucko_str,
 			));
 		}
+		$sql = 'SELECT clans.tag FROM phpbb3_poll_options NATURAL JOIN phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN clans ON clans.forum_leader_group_id = phpbb3_user_group.group_id WHERE phpbb3_poll_options.topic_id = ' . $topic_id . " GROUP BY clans.id ORDER BY clans.tag";
+		$result = $db->sql_query($sql);
+		$voters_bucko = array();
+		while($row = $db->sql_fetchrow($result)) {
+			$voters_bucko[] = $row['tag'];
+		}
+		$template->assign_vars(array(
+			'VOTED_CLANS' => join(', ', $voters_bucko),
+		));
 	}
 
 	$poll_total = 0;
@@ -830,6 +839,7 @@ if (!empty($topic_data['poll_start']))
 
 	unset($poll_bbcode);
 
+	$bucko_total_opts_voted = 0;
 	foreach ($poll_info as $poll_option)
 	{
 		$option_pct = ($poll_total > 0) ? $poll_option['poll_option_total'] / $poll_total : 0;
@@ -844,9 +854,13 @@ if (!empty($topic_data['poll_start']))
 			'POLL_OPTION_IMG' 		=> $user->img('poll_center', $option_pct_txt, round($option_pct * 250)),
 			'POLL_OPTION_VOTED'		=> (in_array($poll_option['poll_option_id'], $cur_voted_id)) ? true : false)
 		);
+		if ($poll_option['poll_option_total'] > 1)
+			$bucko_total_opts_voted++;
 	}
 
 	$poll_end = $topic_data['poll_length'] + $topic_data['poll_start'];
+	if ($bucko_total_opts_votes < 1 && $poll_end > time())
+		$template->assign_vars(array('VOTED_CLANS' => null));
 
 	$template->assign_vars(array(
 		'POLL_QUESTION'		=> $topic_data['poll_title'],

@@ -502,7 +502,7 @@ sub brawl_main_overview {
 				$output .= qq|</td>|;
 			} elsif (($row + 1) % ($test_size * 2) == $test_size) {
 				# Show a vs
-				$output .= qq|<td style="text-align:center;"><a href="brawl.pl?mode=battles&amp;brawl=@{[$round+1]}&amp;game=$info->[8]$periodparam">vs.</a></td>|;
+				$output .= qq|<td style="text-align:center;"><a href="brawl.pl?mode=battles&amp;brawl=@{[$round+1]}&amp;game=|.($info->[8]||"").qq|$periodparam">vs.</a></td>|;
 			} elsif (($row + 1) % ($test_size * 2) == 0) {
 				# Show a blank
 				$output .= qq|<td></td>|;
@@ -547,7 +547,7 @@ sub brawl_battle {
 		} else {
 			$class = "clan_unplayed";
 		}
-		$output .= qq|<td class="$class" colspan="5"><a href="brawl.pl?mode=battles&amp;team_id=$teamdata->[$team_no-1][1]">|.$c->escapeHTML($teamdata->[$team_no-1][2])."</a> (".$c->render_clan($teamdata->[$team_no-1][3], $teamdata->[$team_no-1][4]).qq|)</td>|;
+		$output .= qq|<td class="$class" colspan="5"><a href="brawl.pl?mode=battles&amp;team_id=|.($teamdata->[$team_no-1][1]||"").qq|">|.($c->escapeHTML($teamdata->[$team_no-1][2])||"")."</a> (".$c->render_clan($teamdata->[$team_no-1][3], $teamdata->[$team_no-1][4]).qq|)</td>|;
 		$output .= qq|</tr>|;
 		return $output;
 	};
