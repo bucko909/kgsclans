@@ -59,14 +59,16 @@ if ($dryrun) {
 our $u = "00000000"; # UUID for forum posts
 
 our $debugpost = '';
+our $badlog = '';
 
 sub forum_activity {
-	my ($clan_id) = @_;
+	my ($clan_id, $clan_name) = @_;
 	my $forum_activity = "";
 	if (!$lastvisit{$clan_id} || $lastvisit{$clan_id} < $start_time) {
-		$forum_activity .= "None of the clan leaders signed onto the forum in the last week, so the clan gets a 2 point penalty.\n\n";
+		$forum_activity .= "None of the clan leaders signed onto the forum in the last week, so the clan gets a 2 point penalty.";
 		#$forum_activity .= "None of the clan leaders signed onto the forum in the last week, so the clan would get a 2 point penalty - but this is disabled for the first update.\n\n";
 		$debugpost .= "$clan_id got a penalty for not signing on. ";
+		my $days = int(($now_time-($lastvisit{$clan_id}||0))/60/60/24);
 		if ($lastvisit{$clan_id}) {
 			$debugpost .= "Last visit was $lastvisit{$clan_id} vs. start time of $start_time.\n\n";
 		} else {
@@ -77,6 +79,25 @@ sub forum_activity {
 		} else {
 			$c->db_do("UPDATE clans SET points = points - 2 WHERE id = ?", {}, $clan_id);
 		}
+		if ($days > 14) {
+			my $teams = $c->db_selectone("SELECT COUNT(*) FROM teams WHERE in_brawl = 1 AND clan_id = ?", {}, $clan_id);
+			$badlog .= "$clan_name did not sign on to the forum. ";
+			if ($lastvisit{$clan_id}) {
+				$badlog .= "Last visit was $days days ago.\n";
+			} else {
+				$badlog .= "Unknown last visit time.\n";
+			}
+			if (0 && $teams && $days < 400) { # Sanity check for possible bug with
+				# "unknown"
+				$forum_activity .= " Also, as this has happened twice in a row, setting all of the clan's teams to be not ready for the brawl to ensure they are not entered by accident.";
+				if ($dryrun) {
+					print "Setting all teams to not be ready for brawl.\n";
+				} else {
+					$c->db_do("UPDATE teams SET in_brawl = NULL WHERE clan_id = ?", {}, $clan_id);
+				}
+			}
+		}
+		$forum_activity .= "\n";
 	}
 	if ($lastpost{$clan_id} && $lastpost{$clan_id} > $start_time) {
 		$forum_activity .= "A member of the clan posted to the forum, so the clan gets 2 points.\n\n";
@@ -132,10 +153,10 @@ sub inactive_new_members {
 }
 
 sub game_summary {
-	my ($clan_id) = @_;
-	my $played = $c->db_select('SELECT members.id, members.name, members.rank, COUNT(games.id) AS gamecount, SUM(IF(members.id = white_id, black_id IS NOT NULL, white_id IS NOT NULL)), SUM(IF(members.id = white_id, result = -1, result = 1)), SUM(IF(members.id = white_id, black_id IS NOT NULL AND result = -1, white_id IS NOT NULL AND result = 1)) FROM games INNER JOIN members ON games.black_id = members.id OR games.white_id = members.id WHERE time > ? AND time <= ? AND clan_id = ? GROUP BY members.id HAVING gamecount > 0 ORDER BY gamecount DESC', {}, $start_time, $end_time, $clan_id);
+	my ($clan_id, $clan_name) = @_;
+	my $played = $c->db_select('SELECT members.id, members.name, members.rank, COUNT(games.id) AS gamecount, SUM(IF(members.id = white_id, black_id IS NOT NULL, white_id IS NOT NULL)), SUM(IF(members.id = white_id, result = -1, result = 1)), SUM(IF(members.id = white_id, black_id IS NOT NULL AND result = -1, white_id IS NOT NULL AND result = 1)) FROM games INNER JOIN members ON games.black_id = members.id OR games.white_id = members.id WHERE time > ? AND time <= ? AND clan_id = ? AND members.active = 1 GROUP BY members.id HAVING gamecount > 0 ORDER BY gamecount DESC', {}, $start_time, $end_time, $clan_id);
 #	my $inactive = $c->db_select('SELECT members.id, members.name, members.rank, COUNT(games.id) AS gamecount FROM members LEFT OUTER JOIN games ON games.black_id = members.id OR games.white_id = members.id WHERE time > ? AND time <= ? AND clan_id = ? GROUP BY members.id HAVING gamecount = 0', {}, $start_time, $end_time, $clan_id);
-	my $inactive = $c->db_select('SELECT members.id, members.name, members.rank, MAX(time) AS maxtime FROM members LEFT OUTER JOIN games ON (games.black_id = members.id OR games.white_id = members.id) AND time > ? AND time <= ? WHERE members.clan_id = ? GROUP BY members.id HAVING maxtime IS NULL', {}, $start_time, $end_time, $clan_id);
+	my $inactive = $c->db_select('SELECT members.id, members.name, members.rank, MAX(time) AS maxtime FROM members LEFT OUTER JOIN games ON (games.black_id = members.id OR games.white_id = members.id) AND time > ? AND time <= ? WHERE members.clan_id = ? AND members.active = 1 GROUP BY members.id HAVING maxtime IS NULL', {}, $start_time, $end_time, $clan_id);
 	my $summary = '';
 	if (@$played) {
 		$summary = "Members who played games:[list:$u]\n";
@@ -155,13 +176,18 @@ sub game_summary {
 			$c->db_do("UPDATE clans SET points = points - 2 WHERE id = ?", {}, $clan_id);
 		}
 	}
+	if (@$played < @$inactive / 5) {
+		my $members = @$inactive + @$played;
+		my $active = @$played;
+		$badlog .= "$clan_name had worryingly few ($active of $members) of its members play games.\n";
+	}
 	return $summary;
 }
 
 our %match_results;
 
 sub match_summary {
-	my ($clan_id) = @_;
+	my ($clan_id, $clan_name) = @_;
 
 	my $summary = '';
 
@@ -214,19 +240,20 @@ sub match_summary {
 }
 
 sub check_groups {
-	my ($clan_id) = @_;
+	my ($clan_id, $clan_name) = @_;
 	my @duplicates = @{$clan_duplicates{$clan_id} || []};
 	my $group_check = '';
 	foreach my $dup (@duplicates) {
 		my @clanlist = map { /(.*)\((\d*)\)/; $c->render_clan($2, $1) } split /,/, $dup->[3];
 		$group_check .= qq|<a href="/forum/memberlist.php?mode=viewprofile&amp;u=$dup->[0]">$dup->[1]</a> is in multiple clans: |.join(", ", @clanlist)."\n\n";
+		$badlog .= "$clan_name had cross-clan member $dup->[1]\n";
 	}
 	return $group_check;
 }
 
-my ($results) = $c->db_select('SELECT id, name, forum_id FROM clans WHERE forum_id IS NOT NULL AND period_id = ?', {}, $period_info->{id});
+my ($results) = $c->db_select('SELECT id, name, forum_id FROM clans WHERE forum_id IS NOT NULL AND period_id = ? AND clans.points > -100', {}, $period_info->{id});
 for(@$results) {
-	my $summary = "Summary for ".$c->render_clan($_->[0], $_->[1])." for the period ".strftime("%d/%m/%y", gmtime $start_time)." to ".strftime("%d/%m/%y", gmtime $end_time).":\n\n".game_summary($_->[0]).inactive_new_members($_->[0], $_->[1]).forum_activity($_->[0]).match_summary($_->[0]).check_groups($_->[0]);
+	my $summary = "Summary for ".$c->render_clan($_->[0], $_->[1])." for the period ".strftime("%d/%m/%y", gmtime $start_time)." to ".strftime("%d/%m/%y", gmtime $end_time).":\n\n".game_summary($_->[0], $_->[1]).inactive_new_members($_->[0], $_->[1]).forum_activity($_->[0], $_->[1]).match_summary($_->[0], $_->[1]).check_groups($_->[0], $_->[1]);
 	if ($dryrun) {
 		print qq|Posting to "Clan Game Summary" with message:\n\n$summary\n\n|;
 	} else {
@@ -243,7 +270,7 @@ for my $match_id (keys %match_results) {
 	}
 }
 
-my ($clanresults) = $c->db_select("SELECT clans.id, clans.name, SUM(active.total) AS total FROM clans LEFT OUTER JOIN (SELECT DISTINCT mw.clan_id AS clan_id, COUNT(games.id) AS total FROM games INNER JOIN members mw ON white_id = mw.id WHERE time > ? AND time <= ? GROUP BY mw.clan_id UNION ALL SELECT mb.clan_id AS clan_id, COUNT(games.id) AS total FROM games INNER JOIN members mb ON black_id = mb.id WHERE time > ? AND time <= ? GROUP BY mb.clan_id) active ON clans.id = active.clan_id WHERE period_id = ? GROUP BY clans.id ORDER BY total DESC, clans.tag;", {}, $start_time, $end_time, $start_time, $end_time, $period_info->{id});
+my ($clanresults) = $c->db_select("SELECT clans.id, clans.name, SUM(active.total) AS total FROM clans LEFT OUTER JOIN (SELECT DISTINCT mw.clan_id AS clan_id, COUNT(games.id) AS total FROM games INNER JOIN members mw ON white_id = mw.id WHERE time > ? AND time <= ? GROUP BY mw.clan_id UNION ALL SELECT mb.clan_id AS clan_id, COUNT(games.id) AS total FROM games INNER JOIN members mb ON black_id = mb.id WHERE time > ? AND time <= ? GROUP BY mb.clan_id) active ON clans.id = active.clan_id WHERE period_id = ? AND clans.points > -100 GROUP BY clans.id ORDER BY total DESC, clans.tag;", {}, $start_time, $end_time, $start_time, $end_time, $period_info->{id});
 
 my $clansummary = "";
 my $ispositive;
@@ -270,7 +297,9 @@ $clansummary .= "[/list:u:$u]\n" if $ispositive;
 if ($dryrun) {
 	print qq|Posting to public "Clan Game Summary" with message:\n\n$clansummary\n\n|;
 	print qq|Posting to "Clan Game Debug" with message:\n\n$debugpost\n\n|;
+	print qq|Posting to "Clan Badness" with message:\n\n$badlog\n\n|;
 } else {
 	$c->forum_post_or_reply(1, "Clan Game Summary", "Clan Game Summary, ".strftime("%d/%m/%y", gmtime $end_time), $clansummary, $u);
 	$c->forum_post_or_reply(21, "Clan Game Debug", "Clan Game Debug, ".strftime("%d/%m/%y", gmtime $end_time), $debugpost, $u);
+	$c->forum_post_or_reply(21, "Clan Badness", "Clan Badness, ".strftime("%d/%m/%y", gmtime $end_time), $badlog, $u) if $badlog;
 }

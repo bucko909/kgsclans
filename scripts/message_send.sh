@@ -42,8 +42,8 @@ function cgoban_open_message() {
 }
 function xte_str() {
 	str=$1
-	echo "$str"|perl -ne '@a=map { s/ /space/g; s/\./period/g; s/,/comma/g; s/;/semicolon/g; s/:/colon/g; s/-/minus/g; s/\(/parenleft/g; s/\)/parenright/g; s|/|slash|g; s/"/quotedbl/g; s/'\''/apostrophe/g; s/\n/Return/; /[A-Z]/?("keydown Shift_L","key $_","keyup Shift_L"):("key $_") } split //;system("/usr/bin/xte", @a);'
-	echo "$str"|perl -ne '@a=map { s/ /space/g; s/\./period/g; s/,/comma/g; s/;/semicolon/g; s/:/colon/g; s/-/minus/g; s/\(/parenleft/g; s/\)/parenright/g; s|/|slash|g; s/"/quotedbl/g; s/'\''/apostrophe/g; s/\n/Return/; /[A-Z]/?("keydown Shift_L","key $_","keyup Shift_L"):("key $_") } split //;print "@a\n";'
+	echo "$str"|perl -ne '@a=map { s/ /space/g; s/\./period/g; s/,/comma/g; s/;/semicolon/g; s/:/colon/g; s/-/minus/g; s/\(/parenleft/g; s/\)/parenright/g; s|/|slash|g; s/!/exclam/g; s/"/quotedbl/g; s/'\''/apostrophe/g; s/[\n\r]/Return/; /[A-Z]|exc|paren|quote/?("keydown Shift_L","key $_","keyup Shift_L"):("key $_") } split //;system("/usr/bin/xte", @a);'
+	echo "$str"|perl -ne '@a=map { s/ /space/g; s/\./period/g; s/,/comma/g; s/;/semicolon/g; s/:/colon/g; s/-/minus/g; s/\(/parenleft/g; s/\)/parenright/g; s|/|slash|g; s/!/exclam/g; s/"/quotedbl/g; s/'\''/apostrophe/g; s/[\n\r]/Return/; /[A-Z]|exc|paren|quote/?("keydown Shift_L","key $_","keyup Shift_L"):("key $_") } split //;print "@a\n";'
 }
 function cgoban_enter_message() {
 	to="$1"
