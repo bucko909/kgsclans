@@ -14,13 +14,24 @@ if ($openid = $_SESSION["openid"])
     $user->session_begin();
     $username = $_POST["username"];
     $email = $_POST["email"];
-    $pass = $_POST["pass"];
+	$pass = $_POST["pass"];
+	$kgs_user = null;
+	if ( preg_match ( "@^http://www\\.gokgs\\.com/openid/([a-zA-Z0-9]+)@", $openid, $matches ) ) {
+		$kgs_user = $matches[1];
+	}
     switch($_REQUEST["choice"])
     {
         case "create_new":
             if (usernameAvailable($username))
             {
-                $userId = insertUserRow($username, $email, $pass);
+				$userId = insertUserRow($username, $email, $pass);
+
+				if ($kgs_user) {
+	    			$sql = "INSERT IGNORE INTO phpbb3_profile_fields_data SET pf_kgs_users ='" . $kgs_user . "', user_id = $userId";
+					if ( !($result = $db->sql_query($sql)) ) {
+        				message_die(GENERAL_ERROR, 'Error adding userdata', '', __LINE__, __FILE__, $sql);
+					}
+				}
                 $user->session_create($userId);
             }
             else
@@ -32,6 +43,12 @@ if ($openid = $_SESSION["openid"])
             if (usernameAvailable($username))
             {
                 $userId = insertUserRow($username, $email, $pass);
+				if ($kgs_user) {
+	    			$sql = "INSERT IGNORE INTO phpbb3_profile_fields_data SET pf_kgs_users ='" . $kgs_user . "', user_id = $userId";
+					if ( !($result = $db->sql_query($sql)) ) {
+        				message_die(GENERAL_ERROR, 'Error adding userdata', '', __LINE__, __FILE__, $sql);
+					}
+				}
                 $user->session_create($userId);
             }
             else
@@ -46,7 +63,17 @@ if ($openid = $_SESSION["openid"])
             if ($result['status'] == LOGIN_SUCCESS)
             {
                 $userId = bind($username);
-                $user->session_create($result["user_row"]["user_id"]);
+				if ($kgs_user) {
+	    			$sql = "UPDATE phpbb3_profile_fields_data SET pf_kgs_users = IF(pf_kgs_users IS NULL OR pf_kgs_users = '', '" . $kgs_user . "',  CONCAT(pf_kgs_users, ', " . $kgs_user . "')) WHERE user_id = $userId";
+					if ( !($result = $db->sql_query($sql)) ) {
+        				message_die(GENERAL_ERROR, 'Updating userdata', '', __LINE__, __FILE__, $sql);
+					}
+	    			$sql = "INSERT IGNORE INTO phpbb3_profile_fields_data SET pf_kgs_users ='" . $kgs_user . "', user_id = $userId";
+					if ( !($result = $db->sql_query($sql)) ) {
+        				message_die(GENERAL_ERROR, 'Error adding userdata', '', __LINE__, __FILE__, $sql);
+					}
+				}
+                $user->session_create($userId);
             }
             else
             {
@@ -120,6 +147,15 @@ function insertUserRow($username, $email = "", $pass = "")
 function bind($username)
 {
     global $db, $openid;
+    $sql = "SELECT user_id
+            FROM " . USERS_TABLE . "
+    WHERE username = '$username' ";
+    if ( !($result = $db->sql_query($sql)) )
+    {
+        message_die(GENERAL_ERROR, 'Error in obtaining userdata', '', __LINE__, __FILE__, $sql);
+    }
+	$row = $db->sql_fetchrow($result);
+	$user_id = $row['user_id'];
     $sql = "update " . USERS_TABLE . "
     set user_openid = '$openid' WHERE username = '$username' ";
     if ( !($result = $db->sql_query($sql)) )
