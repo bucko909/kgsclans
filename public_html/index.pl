@@ -101,7 +101,7 @@ BEGIN {
 		cf => { # clan_forum => {
 			sqlcols => [qw/clans.forum_id clans.forum_private_id clans.id/],
 			title => "Clan Forum",
-			init => sub { $persist{cf} = $c->is_clan_member || undef },
+			init => sub { $persist{cf} = $c->is_clan_member || 0 },
 			data => sub { ($_[0] ? "<a href=\"/forum/viewforum.php?f=$_[0]\">Public</a>" : "").($_[1] && $persist{cf} == $_[2] ? " / <a href=\"/forum/viewforum.php?f=$_[1]\">Private</a>" : "") }, # TODO
 		},
 		cl => { # clan_leader => {

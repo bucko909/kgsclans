@@ -7,6 +7,10 @@ our %categories = (
 		name => 'Global Admin',
 		sort => -1,
 	},
+	messaging => {
+		name => 'Messaging',
+		sort => -0.3,
+	},
 	clan => {
 		name => 'General Clan',
 		sort => 5,
@@ -82,7 +86,7 @@ add_period => {
 send_message => {
 	brief => 'Send a message to members on the system',
 	checks => 'admin',
-	categories => [ qw/admin/ ],
+	categories => [ qw/messaging admin/ ],
 	acts_on => 'period',
 	description => 'Send messages to KGS users.',
 	params => [
@@ -116,9 +120,9 @@ send_message => {
 	},
 },
 send_message_group => {
-	brief => 'Send a message to a group of people',
+	brief => 'Send a message to a group of clan leaders',
 	checks => 'admin',
-	categories => [ qw/admin/ ],
+	categories => [ qw/messaging admin/ ],
 	acts_on => 'period',
 	description => 'Send messages to KGS users by group (clan leaders, clan leaders for clans involved in the brawl, clan leaders for clans involved in the preliminary round, clan leaders for clans in the brawl and not in the preliminaries).',
 	params => [
@@ -167,6 +171,97 @@ send_message_group => {
 		return (1, "OK, message(s) queued to be sent.");
 	},
 },
+send_message_clan_dodgy => {
+	brief => 'Send a message to all members of a clan',
+	checks => 'admin',
+	categories => [ qw/messaging admin/ ],
+	acts_on => 'period',
+	description => 'Send messages to all KGS users in a clan.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id, $clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		message_content => {
+			type => 'text',
+			input_type => 'textarea',
+		},
+	],
+	action => sub {
+		my ($c, $p) = @_;
+		my $results = $c->db_select("SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id WHERE members.clan_id = ? GROUP BY members.id", {}, $p->{clan_id});
+		return (0, "Problem getting list of members") unless $results;
+		$p->{alias_name} = [];
+		for(@$results) {
+			my $name = lc $_->[0];
+			my @nicks = split /,/, lc $_->[1];
+			my $nick;
+			if (grep { $name eq $_ } @nicks) {
+				$nick = $name;
+			} else {
+				@nicks = sort @nicks;
+				$nick = $nicks[0];
+			}
+			push @{$p->{alias_name}}, $nick;
+			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $nick, $p->{message_content}) or return (0, "Failed to send.\n");
+		}
+		system("/home/kgs/scripts/message_send_wrapper.sh");
+		return (1, "OK, message(s) queued to be sent.");
+	},
+},
+send_message_clan => {
+	brief => 'Send a message to all members of a clan [BROKEN]',
+	checks => 'admin',
+	categories => [ qw/messaging admin/ ],
+	acts_on => 'period',
+	description => 'Send messages to all KGS users in a clan [DO NOT USE].',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		clan_id => {
+			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id, $clan_id)',
+			hidden => 1,
+			informational => 1,
+		},
+		message_content => {
+			type => 'text',
+			input_type => 'textarea',
+		},
+	],
+	action => sub {
+		# TODO
+		my ($c, $p) = @_;
+		my $results = $c->db_select("SELECT user_id FROM phpbb3_users INNER JOIN members ON members.id = kgs_usernames.member_id WHERE members.clan_id = ? GROUP BY members.id", {}, $p->{clan_id});
+		return (0, "Problem getting list of members") unless $results;
+		$p->{alias_name} = [];
+		for(@$results) {
+			my $name = lc $_->[0];
+			my @nicks = split /,/, lc $_->[1];
+			my $nick;
+			if (grep { $name eq $_ } @nicks) {
+				$nick = $name;
+			} else {
+				@nicks = sort @nicks;
+				$nick = $nicks[0];
+			}
+			push @{$p->{alias_name}}, $nick;
+			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $nick, $p->{message_content}) or return (0, "Failed to send.\n");
+		}
+		system("/home/kgs/scripts/message_send_wrapper.sh");
+		return (1, "OK, message(s) queued to be sent.");
+	},
+},
 remove_clan => {
 	brief => 'Remove an entire clan',
 	checks => 'admin',
@@ -179,6 +274,11 @@ remove_clan => {
 		},
 		clan_id => {
 			type => 'id_clan($period_id)',
+		},
+		clan_name => {
+			type => 'name_clan($period_id, $clan_id)',
+			hidden => 1,
+			informational => 1,
 		},
 	],
 	action => sub {

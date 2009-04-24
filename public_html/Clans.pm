@@ -140,7 +140,7 @@ sub header {
 		$this->db_do("UPDATE hits SET hits=hits+1");
 		$this->{hits} = $this->db_selectone("SELECT hits FROM hits");
 	}
-	print $cgi->start_html(-title => "Clan Stats", -style => { -src => 'style.css' }, -onLoad=>'if(set_focus){set_focus.focus();}', -script => 'var set_focus;');
+	print $cgi->start_html(-title => "Clan Stats", -style => { -src => 'style.css' }, -onLoad=>'if(set_focus){set_focus.focus();}', -script => 'var set_focus;', -head => $cgi->Link({-rel=>"icon",-type=>"image/png",-href=>"/images/favicon.png"}));
 	print $cgi->h1("Clan Stats");
 
 	my $period = $cgi->param('period') ? '&amp;period='.$cgi->param('period') : '';
