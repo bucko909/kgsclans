@@ -21,49 +21,113 @@ function cgoban_exit() {
 function cgoban_login {
 	xte 'key space' # Login->Login box
 	wait_for_window "KGS: Log In"
-	sleep 1
+	sleep 3
 	xte 'key Return' # Username
-	sleep 1
+	sleep 3
 	xte 'key Return' # Password->Rooms list
 	wait_for_window "KGS: Rooms"
-	sleep 1
+	sleep 3
 }
 function cgoban_open_message() {
 	menu=$(xwininfo -name 'KGS: Rooms'|perl -ne 'BEGIN{$y=10;$x=10}if(/Absolute upper-left Y:\s+(\d+)/){$y+=$1}if(/Absolute upper-left X:.*?(\d+)/){$x+=$1}END{print"$x $y\n"}')
 	xte "mousemove $menu" # Select menu
 	xte 'mouseclick 1'
-	sleep 1
+	sleep 3
 	xte 'key Right'
 	xte 'key Right' # User menu
 	xte 'key Up' # Leave message
 	xte 'key Return' # -> Leave message
 	wait_for_window "KGS: Leave Message"
-	sleep 1
+	sleep 3
 }
 function xte_str() {
 	str=$1
-	echo "$str"|perl -ne '@a=map { s/ /space/g; s/\./period/g; s/,/comma/g; s/;/semicolon/g; s/:/colon/g; s/-/minus/g; s/\(/parenleft/g; s/\)/parenright/g; s|/|slash|g; s/!/exclam/g; s/"/quotedbl/g; s/'\''/apostrophe/g; s/[\n\r]/Return/; /[A-Z]|exc|paren|quote/?("keydown Shift_L","key $_","keyup Shift_L"):("key $_") } split //;system("/usr/bin/xte", @a);'
-	echo "$str"|perl -ne '@a=map { s/ /space/g; s/\./period/g; s/,/comma/g; s/;/semicolon/g; s/:/colon/g; s/-/minus/g; s/\(/parenleft/g; s/\)/parenright/g; s|/|slash|g; s/!/exclam/g; s/"/quotedbl/g; s/'\''/apostrophe/g; s/[\n\r]/Return/; /[A-Z]|exc|paren|quote/?("keydown Shift_L","key $_","keyup Shift_L"):("key $_") } split //;print "@a\n";'
+	echo "$str"|perl -ne '
+		my $shift=0;
+		my @out;
+		my %conv = (
+			"`" => "grave",
+			"¬" => "shift|grave",
+			"!" => "shift|1",
+			"\"" => "shift|2",
+			"£" => "shift|3",
+			"\$" => "shift|4",
+			"%" => "shift|5",
+			"^" => "shift|6",
+			"&" => "shift|7",
+			"*" => "shift|8",
+			"(" => "shift|9",
+			")" => "shift|0",
+			"-" => "minus",
+			"_" => "shift|minus",
+			"=" => "equal",
+			"+" => "shift|equal",
+			"[" => "bracketleft",
+			"(" => "shift|bracketleft",
+			"]" => "bracketright",
+			")" => "shift|bracketright",
+			";" => "semicolon",
+			"'\''" => "apostrophe",
+			"#" => "numbersign",
+			"," => "comma",
+			"." => "period",
+			"/" => "slash",
+			":" => "shift|semicolon",
+			"@" => "shift|apostrophe",
+			"~" => "shift|numbersign",
+			"<" => "shift|comma",
+			">" => "shift|period",
+			"/" => "shift|slash",
+			" " => "space",
+			"\n" => "Return",
+			"\r" => "Return",
+		);
+		for (split //) {
+			my $needshift;
+			my $key;
+			if ($key = $conv{$_}) {
+				$needshift = 1 if $key =~ s/shift\|//;
+			} elsif (/[a-zA-Z0-9]/) {
+				$key = $_;
+				$needshift = 1 if ord $key >= ord("A") && ord $key <= ord("Z");
+				$key = lc $key;
+			}
+			if ($needshift && !$shift) {
+				$shift = 1;
+				push @out, "keydown Shift_L";
+			} elsif ($shift && !$needshift) {
+				push @out, "keyup Shift_L";
+				undef $shift;
+			}
+			push @out, "key $key";
+		}
+		if ($shift) {
+			push @out, "keyup Shift_L";
+		}
+		print join("\n",@out)."\n";
+		system("/usr/bin/xte", @out);
+	'
 }
 function cgoban_enter_message() {
 	to="$1"
 	message="$2"
 	xte 'key Tab' # Select username box
-	sleep 1
+	sleep 3
 	xte_str "$to" # username
-	sleep 1
+	sleep 3
 	xte_str "$message" # message
-	sleep 1
+	sleep 10
 	button=$(xwininfo -name 'KGS: Leave Message'|perl -ne 'BEGIN{$y=-10;$x=10}if(/Absolute upper-left Y:\s+(\d+)/||/Height:\s+(\d+)/){$y+=$1}if(/Absolute upper-left X:.*?(\d+)/){$x+=$1}END{print"$x $y\n"}')
 	xte "mousemove $button"
 	xte 'mouseclick 1'
-	sleep 1
+	sleep 3
 }
 function xte() {
 	echo "xte: $1"
 	/usr/bin/xte "$1"
 }
 cgoban_start
+xmodmap /home/kgs/.xmodmap
 cgoban_login
 count=0
 while [ $count -le 5 ]; do
