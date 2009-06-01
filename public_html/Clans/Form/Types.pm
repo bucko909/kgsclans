@@ -111,7 +111,7 @@ id_clan => {
 },
 name_clan => {
 	check => sub {
-		/^[a-zA-Z0-9'!\[\] ]+$/
+		/^[a-zA-Z0-9'!\[\] -]+$/
 	},
 	exists => sub {
 		my ($c, $period, $clan_id) = @_;
@@ -505,6 +505,13 @@ enum => {
 text => {
 	check => sub {
 		/^[a-zA-Z0-9,.:\[\]\\\/>< \(\)'";!\r\n-]+$/
+	},
+	exists => undef,
+#	list => sub { },
+},
+content_message => {
+	check => sub {
+		/^[a-zA-Z0-9`¬!"£\$\%^\&\*()\-=_+\[\]{};'#:@~,\.\/<>\? \r\n]+$/
 	},
 	exists => undef,
 #	list => sub { },

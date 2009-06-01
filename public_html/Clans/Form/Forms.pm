@@ -84,7 +84,7 @@ add_period => {
 	}
 },
 send_message => {
-	brief => 'Send a message to members on the system',
+	brief => 'Send a message to KGS user names [not best practice]',
 	checks => 'admin',
 	categories => [ qw/messaging admin/ ],
 	acts_on => 'period',
@@ -96,27 +96,87 @@ send_message => {
 		alias_id => {
 			type => 'id_kgs($period_id)',
 			multi => 1,
-			brief => 'New team member list',
+			brief => 'Users to message',
 			description => 'You can hold Ctrl to select multiple members',
 		},
 		message_content => {
-			type => 'text',
+			type => 'content_message',
+			brief => "Enter your message",
 			input_type => 'textarea',
 		},
 	],
 	action => sub {
+		require Clans::Message;
 		my ($c, $p) = @_;
-		$p->{alias_name} = [];
+		$p->{success} = [];
+		$p->{failed} = [];
 		for(@{$p->{alias_id}}) {
 			my $alias_name = $c->db_selectone("SELECT nick FROM kgs_usernames WHERE id = ?", {}, $_);
-			push @{$p->{alias_name}}, $alias_name;
-			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $alias_name, $p->{message_content}) or return (0, "Failed to send.\n");
+			my ($stat, $reason) = $c->kgs_send_message($alias_name, $p->{message_content});
+			if ($stat) {
+				push @{$p->{success}}, "$alias_name ($reason)";
+			} else {
+				push @{$p->{failed}}, "$alias_name ($reason)";
+			}
 		}
-		if (!fork()) {
-			system("/home/kgs/scripts/message_send_wrapper.sh");
-			exit 0
+		$c->kgs_message_flush();
+		if (@{$p->{success}}) {
+			if (@{$p->{failed}}) {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).". Failures: ".join(", ", @{$p->{failed}}).".");
+			} else {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).".");
+			}
+		} else {
+			return (1, "All messages failed: ".join(", ", @{$p->{failed}}).".");
 		}
-		return (1, "OK, message(s) queued to be sent.");
+	},
+},
+send_message_forum => {
+	brief => 'Send a message to forum members',
+	checks => 'admin',
+	categories => [ qw/messaging admin/ ],
+	acts_on => 'period',
+	description => 'Send messages to KGS users.',
+	params => [
+		period_id => {
+			type => 'id_period',
+		},
+		forum_id => {
+			type => 'id_forum',
+			multi => 1,
+			brief => 'Members to message',
+			description => 'You can hold Ctrl to select multiple members',
+		},
+		message_content => {
+			type => 'content_message',
+			brief => "Enter your message",
+			input_type => 'textarea',
+		},
+	],
+	action => sub {
+		require Clans::Message;
+		my ($c, $p) = @_;
+		$p->{success} = [];
+		$p->{failed} = [];
+		for(@{$p->{forum_id}}) {
+			my $username = $c->db_selectone("SELECT username FROM phpbb3_users WHERE user_id = ?", {}, $_);
+			my ($stat, $reason) = $c->send_message($_, $p->{message_content});
+			if ($stat) {
+				push @{$p->{success}}, "$username ($reason)";
+			} else {
+				push @{$p->{failed}}, "$username ($reason)";
+			}
+		}
+		$c->kgs_message_flush();
+		if (@{$p->{success}}) {
+			if (@{$p->{failed}}) {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).". Failures: ".join(", ", @{$p->{failed}}).".");
+			} else {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).".");
+			}
+		} else {
+			return (1, "All messages failed: ".join(", ", @{$p->{failed}}).".");
+		}
 	},
 },
 send_message_group => {
@@ -133,49 +193,60 @@ send_message_group => {
 			type => 'enum(All Clan Leaders,Brawl Clan Leaders,Prelim Clan Leaders,Nonprelim Brawl Clan Leaders)',
 		},
 		message_content => {
-			type => 'text',
+			type => 'content_message',
+			brief => "Enter your message",
 			input_type => 'textarea',
 		},
 	],
 	action => sub {
+		require Clans::Message;
 		my ($c, $p) = @_;
 		if ($p->{recepients} =~ /^All/) {
-			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id WHERE clans.period_id = ? AND clans.points >= 0 GROUP BY members.id";
+			$p->{SQL} = "SELECT id, name FROM clans WHERE clans.period_id = ? AND clans.points >= 0";
 		} elsif ($p->{recepients} =~ /^Brawl/) {
-			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl ON brawl.team_match_id = team_match_teams.team_match_id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? AND (brawl.period_id IS NOT NULL OR brawl_prelim.period_id IS NOT NULL) GROUP BY members.id";
+			$p->{SQL} = "SELECT clans.id, clans.name FROM clans INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl ON brawl.team_match_id = team_match_teams.team_match_id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? AND (brawl.period_id IS NOT NULL OR brawl_prelim.period_id IS NOT NULL) GROUP BY clans.id";
 		} elsif ($p->{recepients} =~ /^Prelim/) {
-			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? brawl_prelim.period_id IS NOT NULL GROUP BY members.id";
+			$p->{SQL} = "SELECT clans.id, clans.name FROM clans INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? AND brawl_prelim.period_id IS NOT NULL GROUP BY clans.id";
 		} else {
-			$p->{SQL} = "SELECT members.name, GROUP_CONCAT(nick SEPARATOR ','), MAX(brawl.period_id), MAX(brawl_prelim.period_id) FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id INNER JOIN clans ON members.id = clans.leader_id INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl ON brawl.team_match_id = team_match_teams.team_match_id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? GROUP BY members.id";
+			$p->{SQL} = "SELECT clans.id, clans.name, MAX(brawl.period_id), MAX(brawl_prelim.period_id) FROM clans INNER JOIN teams ON teams.clan_id = clans.id INNER JOIN team_match_teams ON team_match_teams.team_id = teams.id LEFT OUTER JOIN brawl ON brawl.team_match_id = team_match_teams.team_match_id LEFT OUTER JOIN brawl_prelim ON brawl_prelim.team_match_id = team_match_teams.team_match_id WHERE clans.period_id = ? GROUP BY clans.id";
 		}
-		my $results = $c->db_select($p->{SQL}, {}, $p->{period_id});
-		return (0, "Problem getting list of members") unless $results;
-		$p->{alias_name} = [];
-		for(@$results) {
+		my $clans = $c->db_select($p->{SQL}, {}, $p->{period_id});
+		return (0, "Problem getting list of clans") unless $clans;
+		$p->{success} = [];
+		$p->{failed} = [];
+		for(@$clans) {
 			if (@$_ > 2) {
 				next if !$_->[2] || $_->[3];
 			}
-			my $name = lc $_->[0];
-			my @nicks = split /,/, lc $_->[1];
-			my $nick;
-			if (grep { $name eq $_ } @nicks) {
-				$nick = $name;
-			} else {
-				@nicks = sort @nicks;
-				$nick = $nicks[0];
+			my $clan_name = $_->[1];
+			my $leaders = $c->db_select("SELECT phpbb3_user_group.user_id FROM phpbb3_user_group INNER JOIN clans ON clans.forum_leader_group_id = phpbb3_user_group.group_id WHERE clans.id = ?", {}, $_->[0]);
+			for (@$leaders) {
+				my $username = $c->db_selectone("SELECT username FROM phpbb3_users WHERE user_id = ?", {}, $_->[0]);
+				my ($stat, $reason) = $c->send_message($_, $p->{message_content});
+				if ($stat) {
+					push @{$p->{success}}, "$username ($reason)";
+				} else {
+					push @{$p->{failed}}, "$username ($reason)";
+				}
 			}
-			push @{$p->{alias_name}}, $nick;
-			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $nick, $p->{message_content}) or return (0, "Failed to send.\n");
 		}
-		system("/home/kgs/scripts/message_send_wrapper.sh");
-		return (1, "OK, message(s) queued to be sent.");
+		$c->kgs_message_flush();
+		if (@{$p->{success}}) {
+			if (@{$p->{failed}}) {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).". Failures: ".join(", ", @{$p->{failed}}).".");
+			} else {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).".");
+			}
+		} else {
+			return (1, "All messages failed: ".join(", ", @{$p->{failed}}).".");
+		}
 	},
 },
-send_message_clan_dodgy => {
-	brief => 'Send a message to all members of a clan',
-	checks => 'admin',
-	categories => [ qw/messaging admin/ ],
-	acts_on => 'period',
+send_message_clan => {
+	brief => 'Send a message to members of a clan',
+	checks => 'clan_moderator($clan_id)|period_active($period_id)',
+	categories => [ qw/clan messaging admin/ ],
+	acts_on => 'clan',
 	description => 'Send messages to all KGS users in a clan.',
 	params => [
 		period_id => {
@@ -190,76 +261,38 @@ send_message_clan_dodgy => {
 			informational => 1,
 		},
 		message_content => {
-			type => 'text',
+			type => 'content_message',
+			brief => "Enter your message",
 			input_type => 'textarea',
 		},
 	],
 	action => sub {
+		require Clans::Message;
 		my ($c, $p) = @_;
-		my $results = $c->db_select("SELECT members.name, GROUP_CONCAT(nick SEPARATOR ',') FROM kgs_usernames INNER JOIN members ON members.id = kgs_usernames.member_id WHERE members.clan_id = ? GROUP BY members.id", {}, $p->{clan_id});
+		my $results = $c->db_select("SELECT phpbb3_user_group.user_id, phpbb3_users.username FROM phpbb3_users INNER JOIN phpbb3_user_group ON phpbb3_users.user_id = phpbb3_user_group.user_id INNER JOIN clans ON clans.forum_group_id = phpbb3_user_group.group_id WHERE clans.id = ?", {}, $p->{clan_id});
 		return (0, "Problem getting list of members") unless $results;
-		$p->{alias_name} = [];
+		$p->{success} = [];
+		$p->{failed} = [];
 		for(@$results) {
-			my $name = lc $_->[0];
-			my @nicks = split /,/, lc $_->[1];
-			my $nick;
-			if (grep { $name eq $_ } @nicks) {
-				$nick = $name;
+			my $user_id = $_->[0];
+			my $username = $_->[1];
+			my ($stat, $reason) = $c->send_message($user_id, $p->{message_content});
+			if ($stat) {
+				push @{$p->{success}}, "$username ($reason)";
 			} else {
-				@nicks = sort @nicks;
-				$nick = $nicks[0];
+				push @{$p->{failed}}, "$username ($reason)";
 			}
-			push @{$p->{alias_name}}, $nick;
-			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $nick, $p->{message_content}) or return (0, "Failed to send.\n");
 		}
-		system("/home/kgs/scripts/message_send_wrapper.sh");
-		return (1, "OK, message(s) queued to be sent.");
-	},
-},
-send_message_clan => {
-	brief => 'Send a message to all members of a clan [BROKEN]',
-	checks => 'admin',
-	categories => [ qw/messaging admin/ ],
-	acts_on => 'period',
-	description => 'Send messages to all KGS users in a clan [DO NOT USE].',
-	params => [
-		period_id => {
-			type => 'id_period',
-		},
-		clan_id => {
-			type => 'id_clan($period_id)',
-		},
-		clan_name => {
-			type => 'name_clan($period_id, $clan_id)',
-			hidden => 1,
-			informational => 1,
-		},
-		message_content => {
-			type => 'text',
-			input_type => 'textarea',
-		},
-	],
-	action => sub {
-		# TODO
-		my ($c, $p) = @_;
-		my $results = $c->db_select("SELECT user_id FROM phpbb3_users INNER JOIN members ON members.id = kgs_usernames.member_id WHERE members.clan_id = ? GROUP BY members.id", {}, $p->{clan_id});
-		return (0, "Problem getting list of members") unless $results;
-		$p->{alias_name} = [];
-		for(@$results) {
-			my $name = lc $_->[0];
-			my @nicks = split /,/, lc $_->[1];
-			my $nick;
-			if (grep { $name eq $_ } @nicks) {
-				$nick = $name;
+		$c->kgs_message_flush();
+		if (@{$p->{success}}) {
+			if (@{$p->{failed}}) {
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).". Failures: ".join(", ", @{$p->{failed}}).".");
 			} else {
-				@nicks = sort @nicks;
-				$nick = $nicks[0];
+				return (1, "OK, message(s) sent to ".join(", ", @{$p->{success}}).".");
 			}
-			push @{$p->{alias_name}}, $nick;
-			$c->db_do("INSERT INTO message_queue SET username=?, message=?", {}, $nick, $p->{message_content}) or return (0, "Failed to send.\n");
+		} else {
+			return (1, "All messages failed: ".join(", ", @{$p->{failed}}).".");
 		}
-		system("/home/kgs/scripts/message_send_wrapper.sh");
-		return (1, "OK, message(s) queued to be sent.");
 	},
 },
 remove_clan => {

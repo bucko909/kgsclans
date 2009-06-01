@@ -680,6 +680,7 @@ sub output_form {
 			$output .= qq|<td class="edit">|;
 			my $input_type = $info->{forms_info}{input_type} || $info->{type_defaults}{input_type} || 'edit';
 			if ($input_type eq 'textarea') {
+				$value ||= "";
 				$output .= qq|<textarea name="$qname\_$qparam_name" type="text" cols="80" rows="15">$value</textarea>|;
 			} elsif ($input_type eq 'checkbox') {
 				if ($value) {

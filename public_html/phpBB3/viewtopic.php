@@ -776,18 +776,24 @@ if (!empty($topic_data['poll_start']))
 		trigger_error($user->lang['VOTE_SUBMITTED'] . '<br /><br />' . sprintf($user->lang['RETURN_TOPIC'], '<a href="' . $redirect_url . '">', '</a>'));
 	}
 
+	$poll_total = 0;
+	foreach ($poll_info as $poll_option)
+	{
+		$poll_total += $poll_option['poll_option_total'];
+	}
+
 	/*
 	 * Bucko mod
 	 */
 	if ($forum_id == 3) {
 		// Proposals forum. Massage the data so that we know who voted for what.
-		$sql = 'SELECT forum_leader_group_id FROM clans INNER JOIN phpbb3_user_group ON phpbb3_user_group.group_id = forum_group_id WHERE phpbb3_user_group.user_id = ' . $user->data['user_id'] . ' AND user_pending = 0';
+		$sql = 'SELECT forum_group_id FROM clans INNER JOIN phpbb3_user_group ON phpbb3_user_group.group_id = forum_group_id WHERE phpbb3_user_group.user_id = ' . $user->data['user_id'] . ' AND user_pending = 0';
 		$result = $db->sql_query($sql);
 		if ($row = $db->sql_fetchrow($result)) {
-			$clan_leader_group_id = $row['forum_leader_group_id'];
+			$clan_group_id = $row['forum_group_id'];
 		}
-		if ($clan_leader_group_id) {
-			$sql = 'SELECT poll_option_text, username FROM phpbb3_poll_options NATURAL JOIN phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN phpbb3_users ON phpbb3_users.user_id = vote_user_id WHERE phpbb3_poll_options.topic_id = ' . $topic_id . ' AND phpbb3_user_group.group_id = ' . $clan_leader_group_id;
+		if ($clan_group_id) {
+			$sql = 'SELECT poll_option_text, username FROM phpbb3_poll_options NATURAL JOIN phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN phpbb3_users ON phpbb3_users.user_id = vote_user_id WHERE phpbb3_poll_options.topic_id = ' . $topic_id . ' AND phpbb3_user_group.group_id = ' . $clan_group_id;
 			$result = $db->sql_query($sql);
 
 			$voted_for_bucko = array();
@@ -811,7 +817,48 @@ if (!empty($topic_data['poll_start']))
 				'VOTED_FOR' => $voted_for_bucko_str,
 			));
 		}
-		$sql = 'SELECT clans.tag FROM phpbb3_poll_options NATURAL JOIN phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN clans ON clans.forum_leader_group_id = phpbb3_user_group.group_id WHERE phpbb3_poll_options.topic_id = ' . $topic_id . " GROUP BY clans.id ORDER BY clans.tag";
+		// Count clan involvement
+		$sql = 'SELECT clans.id AS clan, MAX(clansl.id) AS lead, COUNT(DISTINCT vote_user_id) AS num FROM phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN phpbb3_user_group pgl ON phpbb3_user_group.user_id = vote_user_id INNER JOIN clans ON clans.forum_group_id = phpbb3_user_group.group_id LEFT OUTER JOIN clans clansl ON clans.id = clansl.id AND clansl.forum_leader_group_id = pgl.group_id WHERE phpbb3_poll_votes.topic_id = ' . $topic_id . ' GROUP BY clans.id';
+		$clan_mul_bucko = array();
+		$result = $db->sql_query($sql);
+		$poll_total = 0;
+		while ($row = $db->sql_fetchrow($result)) {
+			$count_bucko = $row["num"];
+			if ($row["lead"]) {
+				$count_bucko--;
+				$poll_total++;
+			}
+			if ($count_bucko == 0) {
+				$val = 0;
+			} else {
+				$val = 2*(1-pow(1/2,$count_bucko)) / $count_bucko;
+				//$val = log($count_bucko)+.5772+1/2/$count_bucko-1/(12*$count_bucko*$count_bucko)+1/(120*pow($count_bucko,4)) / $count_bucko;
+				$poll_total += $val * $count_bucko;
+			}
+			//echo "C: $row[clan], $row[lead], $row[num], $count_bucko, $val<br/>";
+			$vote_wgt_bucko[$row["clan"]] = $val;
+		}
+		$sql = 'SELECT phpbb3_poll_votes.poll_option_id AS opt, MAX(clans.id) AS clan, MAX(clansl.id) AS ismod, MAX(clanl.user_id) AS islead FROM phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN phpbb3_user_group pgl ON pgl.user_id = vote_user_id LEFT OUTER JOIN phpbb3_user_group clanl ON clanl.user_id = vote_user_id AND clanl.group_id = 4 INNER JOIN clans ON clans.forum_group_id = phpbb3_user_group.group_id LEFT OUTER JOIN clans clansl ON clans.id = clansl.id AND clansl.forum_leader_group_id = pgl.group_id WHERE phpbb3_poll_votes.topic_id = ' . $topic_id . ' GROUP BY phpbb3_poll_votes.poll_option_id, vote_user_id ORDER BY poll_option_id, clans.id, clanl.user_id DESC, clansl.id DESC';
+		$result = $db->sql_query($sql);
+		$opt_totals_bucko = array();
+		$clan_id_temp_bucko = 0;
+		while ($row = $db->sql_fetchrow($result)) {
+			//echo "$row[opt], $row[clan], $row[ismod], $row[islead]<br/>";
+			if (!$opt_totals_bucko[$row["opt"]]) {
+				$opt_totals_bucko[$row["opt"]] = 0;
+			}
+			if ($row["clan"] != $clan_id_temp_bucko && $row["ismod"]) {
+				$opt_totals_bucko[$row["opt"]] += 1;
+			} else {
+				$opt_totals_bucko[$row["opt"]] += $vote_wgt_bucko[$row["clan"]];
+			}
+			$clan_id_temp_bucko = $row["clan"];
+		}
+		for ($i = 0, $size = sizeof($poll_info); $i < $size; $i++) {
+//			echo $poll_info[$i]["poll_option_id"] . " -> " . $opt_totals_bucko[$poll_info[$i]["poll_option_id"]] . "<br/>";
+			$poll_info[$i]["poll_option_total"] = sprintf("%0.2f", $opt_totals_bucko[$poll_info[$i]["poll_option_id"]]);
+		}
+		$sql = 'SELECT clans.tag FROM phpbb3_poll_options NATURAL JOIN phpbb3_poll_votes INNER JOIN phpbb3_user_group ON phpbb3_user_group.user_id = vote_user_id INNER JOIN clans ON clans.forum_group_id = phpbb3_user_group.group_id WHERE phpbb3_poll_options.topic_id = ' . $topic_id . " GROUP BY clans.id ORDER BY clans.tag";
 		$result = $db->sql_query($sql);
 		$voters_bucko = array();
 		while($row = $db->sql_fetchrow($result)) {
@@ -820,12 +867,6 @@ if (!empty($topic_data['poll_start']))
 		$template->assign_vars(array(
 			'VOTED_CLANS' => join(', ', $voters_bucko),
 		));
-	}
-
-	$poll_total = 0;
-	foreach ($poll_info as $poll_option)
-	{
-		$poll_total += $poll_option['poll_option_total'];
 	}
 
 	if ($poll_info[0]['bbcode_bitfield'])
