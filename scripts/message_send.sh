@@ -43,6 +43,7 @@ function cgoban_open_message() {
 function xte_str() {
 	str=$1
 	echo "$str"|perl -ne '
+		use utf8;
 		my $shift=0;
 		my @out;
 		my %conv = (
@@ -63,9 +64,9 @@ function xte_str() {
 			"=" => "equal",
 			"+" => "shift|equal",
 			"[" => "bracketleft",
-			"(" => "shift|bracketleft",
+			"{" => "shift|bracketleft",
 			"]" => "bracketright",
-			")" => "shift|bracketright",
+			"}" => "shift|bracketright",
 			";" => "semicolon",
 			"'\''" => "apostrophe",
 			"#" => "numbersign",
@@ -77,7 +78,7 @@ function xte_str() {
 			"~" => "shift|numbersign",
 			"<" => "shift|comma",
 			">" => "shift|period",
-			"/" => "shift|slash",
+			"?" => "shift|slash",
 			" " => "space",
 			"\n" => "Return",
 			"\r" => "Return",
@@ -91,6 +92,10 @@ function xte_str() {
 				$key = $_;
 				$needshift = 1 if ord $key >= ord("A") && ord $key <= ord("Z");
 				$key = lc $key;
+			} else {
+				open ERR, ">>/home/kgs/test";
+				print ERR "Error char: $_ (".ord($_).")\n";
+				close ERR;
 			}
 			if ($needshift && !$shift) {
 				$shift = 1;
