@@ -7,11 +7,12 @@ REQUEST_METHOD=GET REMOTE_USER=system QUERY_STRING='mode=all&delay=10' ./update.
 cd /home/kgs
 mysql < scripts/makegrids.sql >> /home/kgs/UPDATE.OUT 2>> /home/kgs/UPDATE.ERR
 
+PERIOD=$(mysql -sbe 'SELECT MAX(id) FROM clanperiods')
 # Log clan points history
-mysql -se 'INSERT INTO clanpoints_history SELECT UNIX_TIMESTAMP(), id, points FROM clans WHERE period_id = 9;'
+mysql -se 'INSERT INTO clanpoints_history SELECT UNIX_TIMESTAMP(), id, points FROM clans WHERE period_id = '$PERIOD';'
 
 # Ensure forum users are associated properly with their clans.
-mysql -se 'DELETE FROM forumuser_clans; INSERT IGNORE INTO forumuser_clans SELECT phpbb3_user_group.user_id AS user_id, clans.id AS clan_id, clans.name AS clan_name FROM phpbb3_user_group INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_group_id AND clans.period_id = 9;'
+mysql -se 'DELETE FROM forumuser_clans; INSERT IGNORE INTO forumuser_clans SELECT phpbb3_user_group.user_id AS user_id, clans.id AS clan_id, clans.name AS clan_name FROM phpbb3_user_group INNER JOIN clans ON phpbb3_user_group.group_id = clans.forum_group_id AND clans.period_id = '$PERIOD';'
 
 # Nightly backup
 dump1=/home/kgs/dbdumps/dbdump-"`date +%y%m%d-%H%M%S`".sql
